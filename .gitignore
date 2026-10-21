@@ -1,0 +1,8 @@
+node_modules/
+release/
+.preview/
+coverage/
+*.log
+.env
+data/
+.test-data/
