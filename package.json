@@ -1,6 +1,6 @@
 {
   "name": "maine-source",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local-first desktop workbench for building traceable text datasets",
   "license": "GPL-3.0-only",
   "author": "Maine-Source contributors",
@@ -11,7 +11,7 @@
     "test": "node --test tests/*.test.mjs",
     "check": "node scripts/check.mjs",
     "preview": "node scripts/preview.mjs",
-    "dist": "electron-builder --win nsis --x64",
+    "dist": "electron-builder --win nsis --x64 --publish never",
     "pack": "electron-builder --dir --win --x64"
   },
   "dependencies": {

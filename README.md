@@ -2,11 +2,11 @@
 
 A Windows desktop workbench for collecting text and code into traceable ML datasets. Pick sources with checkboxes, define reusable recipes, and watch a customizable local dashboard.
 
-**Status: 0.1.0 alpha.** The collector, desktop UI, and Windows installer are implemented. Eleven online connectors have passed small public-data checks; GovInfo needs an authenticated integration check. This is a local application: there is no hosted account or collection backend.
+**Status: 0.1.1 alpha.** The collector, desktop UI, and Windows installer are implemented. Eleven online connectors have passed small public-data checks; GovInfo needs an authenticated integration check. This is a local application: there is no hosted account or collection backend.
 
 ## Run or install
 
-Run `Maine Source Setup 0.1.0.exe` from the build's `release/` folder to install for your Windows user. This alpha installer is unsigned; public distribution still needs a signing certificate and release verification. An unpacked app is also generated in `release/win-unpacked/`.
+Run `Maine Source Setup 0.1.1.exe` from the build's `release/` folder to install for your Windows user. This alpha installer is unsigned; public distribution still needs a signing certificate and release verification. An unpacked app is also generated in `release/win-unpacked/`.
 
 For development, install Node.js 24 and pnpm 11, then:
 
@@ -87,7 +87,7 @@ Keyword filtering scans the **title and text**, using literal lines, Unicode nor
 - Wall-clock time includes pauses, network requests, and rate-limit waits. There is one active collection at a time; sources are advanced in turn. An outstanding source request can delay another source until it returns or times out.
 - Transient HTTP failures and rate limits are retried with cancellable waits. Redirects are not followed with credentials. Response bodies and local text files have size limits.
 - Stopping or quitting cancels network waits. Saved runs remain inspectable; a run interrupted by an unexpected exit is marked interrupted after restart. Automatic continuation from a saved checkpoint is not implemented.
-- Data lives in Electron's per-user application data folder. The settings screen can open it. Keys are encrypted using Electron `safeStorage` when remembered, or held only in process memory for the session. They never enter recipes, dataset records, exports, or the preview adapter.
+- On startup the app creates `data/Maine-Source/` on the user’s actual Windows Desktop, including a redirected or OneDrive Desktop. Collected records and run history live under `datasets/`; the export dialog defaults to `exports/`. The settings screen opens this Desktop data folder. Older internal datasets are copied across on first use when no Desktop dataset folder exists, leaving the original copy untouched. Preferences and credentials remain in private per-user application storage. Keys are encrypted using Electron `safeStorage` when remembered, or held only in process memory for the session. They never enter recipes, dataset records, exports, or the preview adapter.
 - JSONL imports support `text` (or `content`), `title`, `url`, `version`, `attribution`, and `rights: { expression, basis, scope, url }`. Stronger evidence flags can be supplied but are user assertions, not independently validated facts.
 
 ## Project layout

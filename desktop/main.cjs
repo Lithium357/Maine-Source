@@ -3,7 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 
-let window, collector, state, catalog, policy, atomicJSON;
+let window, collector, state, catalog, policy, atomicJSON, storage;
 let keys = {}, storedKeys = {}, localPaths = [], closing = false;
 const uiFile = path.join(__dirname, '..', 'ui', 'index.html');
 const statePath = () => path.join(app.getPath('userData'), 'preferences.json');
@@ -12,7 +12,7 @@ const respond = fn => async (event, ...args) => {
   if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== pathToFileURL(uiFile).href) throw new Error('Untrusted IPC sender');
   try { return { ok: true, value: await fn(...args) }; } catch (error) { return { ok: false, error: error.message || 'Operation failed' }; }
 };
-const snapshot = () => ({ ...state, jobs: collector.jobs, sourceCatalog: catalog.sources, presets: catalog.presets, widgetCatalog: catalog.widgets, licenseIds: policy.licenseIds, licenseLevels: policy.levels, credentialStatus: Object.fromEntries(catalog.sources.filter(s => s.key).map(s => [s.id, Boolean(keys[s.id])])), secureStorage: safeStorage.isEncryptionAvailable(), localFiles: localPaths.map(p => path.basename(p)), dataPath: app.getPath('userData') });
+const snapshot = () => ({ ...state, jobs: collector.jobs, sourceCatalog: catalog.sources, presets: catalog.presets, widgetCatalog: catalog.widgets, licenseIds: policy.licenseIds, licenseLevels: policy.levels, credentialStatus: Object.fromEntries(catalog.sources.filter(s => s.key).map(s => [s.id, Boolean(keys[s.id])])), secureStorage: safeStorage.isEncryptionAvailable(), localFiles: localPaths.map(p => path.basename(p)), dataPath: storage.data, version: app.getVersion() });
 const emit = () => { if (window && !window.isDestroyed()) window.webContents.send('state:changed', snapshot()); };
 const save = () => atomicJSON(statePath(), state);
 
@@ -21,11 +21,13 @@ app.whenReady().then(async () => {
   catalog = await import('../src/catalog.mjs');
   policy = await import('../src/policy.mjs');
   atomicJSON = engine.atomicJSON;
+  const { prepareStorage } = await import('../src/storage.mjs');
+  storage = await prepareStorage({ desktop: app.getPath('desktop'), userData: app.getPath('userData') });
   state = { selectedSources: [], recipes: [], dashboard: catalog.widgets.map(w => w.id), onboardingDone: false };
   try { state = { ...state, ...JSON.parse(await fs.readFile(statePath(), 'utf8')) }; } catch (e) { if (e.code !== 'ENOENT') await dialog.showMessageBox({ type: 'warning', message: 'Preferences could not be loaded. Defaults will be used.' }); }
   try { storedKeys = JSON.parse(await fs.readFile(vaultPath(), 'utf8')); } catch {}
   if (safeStorage.isEncryptionAvailable()) for (const [id, encrypted] of Object.entries(storedKeys)) { try { keys[id] = safeStorage.decryptString(Buffer.from(encrypted, 'base64')); } catch {} }
-  collector = new engine.Collector({ root: path.join(app.getPath('userData'), 'datasets'), getKey: id => keys[id] || '', onChange: emit });
+  collector = new engine.Collector({ root: storage.datasets, getKey: id => keys[id] || '', onChange: emit });
   await collector.init();
   window = new BrowserWindow({ width: 1440, height: 960, minWidth: 1000, minHeight: 720, backgroundColor: '#f5f7f8', title: 'Maine Source', icon: path.join(__dirname, '..', 'assets', 'icon.png'), autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -64,7 +66,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('job:stop', respond(() => collector.stop()));
   ipcMain.handle('dataset:export', respond(async ({ id, format }) => {
     const job = collector.jobs.find(j => j.id === id); if (!job) throw new Error('Dataset not found');
-    const choice = await dialog.showSaveDialog(window, { title: 'Export dataset', defaultPath: `${job.name.replace(/[^\w-]+/g, '-')}.${format === 'text' ? 'txt' : 'jsonl'}`, filters: [{ name: format === 'text' ? 'Plain text' : 'JSON Lines', extensions: [format === 'text' ? 'txt' : 'jsonl'] }] });
+    const choice = await dialog.showSaveDialog(window, { title: 'Export dataset', defaultPath: path.join(storage.exports, `${job.name.replace(/[^\w-]+/g, '-')}.${format === 'text' ? 'txt' : 'jsonl'}`), filters: [{ name: format === 'text' ? 'Plain text' : 'JSON Lines', extensions: [format === 'text' ? 'txt' : 'jsonl'] }] });
     if (!choice.canceled) { await collector.exportTo(id, choice.filePath, format); return 'Dataset and companion manifest exported.'; }
     return 'Export canceled.';
   }));
@@ -72,7 +74,7 @@ app.whenReady().then(async () => {
     const url = new URL(address); if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Only HTTPS links may be opened');
     await shell.openExternal(url.href);
   }));
-  ipcMain.handle('data:open', respond(() => shell.openPath(app.getPath('userData'))));
+  ipcMain.handle('data:open', respond(async () => { const error = await shell.openPath(storage.data); if (error) throw new Error(error); }));
   await window.loadFile(uiFile);
   window.on('close', async event => {
     if (closing) return;
