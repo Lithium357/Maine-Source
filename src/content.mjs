@@ -9,7 +9,7 @@ export function publicURL(address) {
   for (const key of [...u.searchParams.keys()]) if (/key|token|signature|credential|secret/i.test(key)) u.searchParams.delete(key);
   return u.href;
 }
-export function archiveText(bytes, filename = '') {
+export function archiveText(bytes, filename = '', { decode = data => data.toString('utf8'), include = name => textFile.test(name) } = {}) {
   let data = Buffer.from(bytes);
   if (data[0] === 0x1f && data[1] === 0x8b) data = gunzipSync(data, { maxOutputLength: expandedLimit });
   if (data.length > expandedLimit) throw new Error('Archive exceeds decompressed size limit');
@@ -23,8 +23,8 @@ export function archiveText(bytes, filename = '') {
       if (++entries > 10000) throw new Error('Archive contains too many members');
       const name = header.subarray(0, 100).toString().replace(/\0.*$/, '');
       const type = header[156];
-      if ([0, 48].includes(type) && textFile.test(name)) {
-        const text = data.subarray(offset + 512, offset + 512 + size).toString('utf8');
+      if ([0, 48].includes(type) && include(name)) {
+        const text = decode(data.subarray(offset + 512, offset + 512 + size));
         total += size; if (total > expandedLimit) throw new Error('Archive text exceeds size limit');
         files.push({ name, text });
       }
@@ -32,7 +32,7 @@ export function archiveText(bytes, filename = '') {
     }
     return files;
   }
-  if (!data.includes(0) && !data.subarray(0, 5).equals(Buffer.from('%PDF-'))) return [{ name: filename || 'source.tex', text: data.toString('utf8') }];
+  if (!data.includes(0) && !data.subarray(0, 5).equals(Buffer.from('%PDF-'))) return [{ name: filename || 'source.tex', text: decode(data) }];
   return [];
 }
 export async function extractText(data, filename, mediaType, { signal } = {}) {

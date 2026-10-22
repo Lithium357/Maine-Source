@@ -3,7 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 
-let window, collector, state, catalog, policy, atomicJSON, storage;
+let window, collector, state, catalog, policy, atomicJSON, storage, output;
 let keys = {}, storedKeys = {}, localPaths = [], closing = false;
 const uiFile = path.join(__dirname, '..', 'ui', 'index.html');
 const statePath = () => path.join(app.getPath('userData'), 'preferences.json');
@@ -20,12 +20,14 @@ app.whenReady().then(async () => {
   const engine = await import('../src/engine.mjs');
   catalog = await import('../src/catalog.mjs');
   policy = await import('../src/policy.mjs');
+  output = await import('../src/output-options.mjs');
   atomicJSON = engine.atomicJSON;
   const { prepareStorage } = await import('../src/storage.mjs');
   storage = await prepareStorage({ desktop: app.getPath('desktop'), userData: app.getPath('userData') });
   state = { selectedSources: [], recipes: [], dashboard: catalog.widgets.map(w => w.id), onboardingDone: false };
   try { state = { ...state, ...JSON.parse(await fs.readFile(statePath(), 'utf8')) }; } catch (e) { if (e.code !== 'ENOENT') await dialog.showMessageBox({ type: 'warning', message: 'Preferences could not be loaded. Defaults will be used.' }); }
   try { storedKeys = JSON.parse(await fs.readFile(vaultPath(), 'utf8')); } catch {}
+  try { state.textOutput = output.validateTextOutput(state.textOutput); } catch { state.textOutput = output.defaultTextOutput(); }
   if (safeStorage.isEncryptionAvailable()) for (const [id, encrypted] of Object.entries(storedKeys)) { try { keys[id] = safeStorage.decryptString(Buffer.from(encrypted, 'base64')); } catch {} }
   collector = new engine.Collector({ root: storage.datasets, getKey: id => keys[id] || '', onChange: emit });
   await collector.init();
@@ -35,6 +37,9 @@ app.whenReady().then(async () => {
   window.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   window.webContents.session.setPermissionCheckHandler(() => false);
   ipcMain.handle('state:get', respond(snapshot));
+  ipcMain.handle('output:save', respond(async preferences => {
+    state.textOutput = output.validateTextOutput(preferences); await save(); emit();
+  }));
   ipcMain.handle('sources:save', respond(async ids => {
     if (!Array.isArray(ids) || ids.some(id => !catalog.sources.some(s => s.id === id && !s.planned))) throw new Error('Invalid source selection');
     state.selectedSources = [...new Set(ids)]; state.onboardingDone = true; await save(); emit();
@@ -66,8 +71,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('job:stop', respond(() => collector.stop()));
   ipcMain.handle('dataset:export', respond(async ({ id, format }) => {
     const job = collector.jobs.find(j => j.id === id); if (!job) throw new Error('Dataset not found');
-    const choice = await dialog.showSaveDialog(window, { title: 'Export dataset', defaultPath: path.join(storage.exports, `${job.name.replace(/[^\w-]+/g, '-')}.${format === 'text' ? 'txt' : 'jsonl'}`), filters: [{ name: format === 'text' ? 'Plain text' : 'JSON Lines', extensions: [format === 'text' ? 'txt' : 'jsonl'] }] });
-    if (!choice.canceled) { await collector.exportTo(id, choice.filePath, format); return 'Dataset and companion manifest exported.'; }
+    const extension = format === 'text' ? output.textExportExtension(state.textOutput) : 'jsonl';
+    const choice = await dialog.showSaveDialog(window, { title: 'Export dataset', defaultPath: path.join(storage.exports, `${job.name.replace(/[^\w-]+/g, '-')}.${extension}`), filters: [{ name: format === 'text' ? 'Configured text output' : 'JSON Lines', extensions: [extension.split('.').at(-1)] }] });
+    if (!choice.canceled) { await collector.exportTo(id, choice.filePath, format, state.textOutput); return 'Dataset, original files, and companion manifest exported.'; }
     return 'Export canceled.';
   }));
   ipcMain.handle('link:open', respond(async address => {

@@ -14,6 +14,7 @@ export const previewAPI = {
   async call(channel, payload) {
     if (channel === 'state:get') return structuredClone(state);
     if (channel === 'dashboard:save') state.dashboard = payload;
+    else if (channel === 'output:save') state.textOutput = payload;
     else if (channel === 'sources:save') state.selectedSources = payload;
     else if (channel === 'recipe:save') { const recipe = { ...payload, id: payload.id || crypto.randomUUID() }; state.recipes = [recipe, ...state.recipes.filter(r => r.id !== recipe.id)]; emit(); return recipe.id; }
     else if (channel === 'recipe:delete') state.recipes = state.recipes.filter(r => r.id !== payload);

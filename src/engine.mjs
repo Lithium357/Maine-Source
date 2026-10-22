@@ -1,13 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, writeFile, rename, readFile, readdir, open, copyFile } from 'node:fs/promises';
+import { mkdir, writeFile, rename, readFile, readdir, open, copyFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
-import { createReadStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createGzip } from 'node:zlib';
 import { createInterface } from 'node:readline';
 import { connectors } from './connectors.mjs';
 import { sources } from './catalog.mjs';
 import { evaluate } from './policy.mjs';
 import { HttpClient } from './http.mjs';
 import { materialize } from './content.mjs';
+import { defaultTextOutput, validateTextOutput } from './output-options.mjs';
+import { attachmentPath, renderText, transformText, encodeText } from './text-output.mjs';
 
 export function validateRecipe(recipe) {
   if (!recipe || typeof recipe !== 'object') throw new Error('Invalid recipe');
@@ -189,27 +194,39 @@ export class Collector {
   }
   pause() { if (!this.active) return; this.active.paused = !this.active.paused; this.active.job.status = this.active.paused ? 'paused' : 'running'; this.active.wake?.(); this.save(); this.emit(); }
   stop() { if (!this.active) return; this.active.job.reason ||= 'Stopped by user'; this.active.job.status = 'stopping'; this.active.controller.abort(); this.active.wake?.(); this.emit(); }
-  async exportTo(id, destination, format = 'jsonl') {
+  async exportTo(id, destination, format = 'jsonl', textOutput = defaultTextOutput()) {
     const job = this.jobs.find(j => j.id === id);
     if (!job || this.active?.job.id === id) throw new Error('Finish or stop this run before exporting');
     if (!['jsonl', 'text'].includes(format)) throw new Error('Invalid export format');
-    const directory = path.join(this.root, id, 'records');
-    const handle = await open(destination, 'w');
-    try {
+    const settings = validateTextOutput(textOutput);
+    const runRoot = path.join(this.root, id), directory = path.join(runRoot, 'records');
+    const originalsOnly = format === 'text' && settings.representation === 'originals';
+    const structured = format === 'jsonl' || originalsOnly;
+    const compressed = !structured && settings.compression === 'gzip';
+    let exportedRecords = 0, skippedRecords = 0;
+    const chunks = async function* () {
       for (const file of (await readdir(directory)).filter(f => f.endsWith('.json')).sort()) {
-        const data = await readFile(path.join(directory, file), 'utf8');
-        const r = JSON.parse(data);
+        const r = JSON.parse(await readFile(path.join(directory, file), 'utf8'));
+        const text = structured ? null : await renderText(r, settings, runRoot);
+        if (!structured && text === null) { skippedRecords++; continue; }
         for (const attachment of r.attachments || []) {
           const relative = attachment.path;
-          if (!/^assets\/[0-9]{8}\/[a-zA-Z0-9._-]+$/.test(relative)) throw new Error('Invalid saved attachment path');
+          const source = attachmentPath(runRoot, relative);
           const output = path.join(`${destination}.assets`, relative);
-          await mkdir(path.dirname(output), { recursive: true });
-          await copyFile(path.join(this.root, id, relative), output);
+          await mkdir(path.dirname(output), { recursive: true }); await copyFile(source, output);
           attachment.path = `${path.basename(destination)}.assets/${relative}`;
         }
-        if (format === 'jsonl') await handle.writeFile(JSON.stringify(r) + '\n'); else await handle.writeFile(`${r.title || ''}\n${r.url || ''}\n\n${r.text}\n${(r.attachments || []).map(a => `Original: ${a.path} (SHA-256 ${a.sha256})`).join('\n')}\n\n---\n\n`);
+        if (originalsOnly) delete r.text;
+        yield structured ? Buffer.from(JSON.stringify(r) + '\n', 'utf8') : encodeText(transformText(text, settings), settings, { first: exportedRecords === 0 });
+        exportedRecords++;
       }
-    } finally { await handle.close(); }
-    await atomicJSON(`${destination}.manifest.json`, { schema: 'maine-source.dataset.v1', exportedAt: new Date().toISOString(), format, ...job, samples: undefined, events: undefined });
+      if (!exportedRecords && !structured && settings.representation === 'latex') throw new Error('No original LaTeX .tex source is available in this dataset; PDF text is not converted into invented LaTeX');
+    };
+    const temp = `${destination}.${randomUUID()}.tmp`;
+    try {
+      await pipeline(Readable.from(chunks()), ...(compressed ? [createGzip()] : []), createWriteStream(temp, { flags: 'wx', mode: 0o600 }));
+      await rename(temp, destination);
+    } catch (error) { await unlink(temp).catch(() => {}); throw error; }
+    await atomicJSON(`${destination}.manifest.json`, { schema: 'maine-source.dataset.v1', exportedAt: new Date().toISOString(), format, ...job, samples: undefined, events: undefined, exportedRecords, skippedRecords, textOutput: structured ? { representation: originalsOnly ? 'originals' : 'records', encoding: 'utf8', bom: 'never', normalization: 'none', newlines: 'lf', compression: 'none' } : settings });
   }
 }
