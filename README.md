@@ -79,7 +79,7 @@ See the [source expansion research](docs/source-research-2026-10-22.md) for furt
 
 On 2026-10-22 all eleven new connectors returned text in live public-data checks. The JSONL check read a real Dolly row through its Hugging Face HTTPS download. Checks were small samples, not completeness or throughput benchmarks. Run `pnpm smoke -- advisories osv arxiv openalex ckan socrata dataverse rss usgs openlibrary jsonl` to repeat these without saved credentials.
 
-Version 0.1.3 passes 101 automated tests and builds a Windows installer. Its interactive GUI check was interrupted by the user; the completed CISA GUI/export walkthrough described above was performed on 0.1.2.
+Version 0.1.3 passes 101 automated tests and builds a Windows installer. Its packaged GUI passed a live USGS walkthrough: choose the source, set minimum magnitude to 4.5, save and collect with a two-document limit, observe completion, and export through the native save dialog. The exported rows and manifest confirmed the saved settings, two qualifying observations, preserved GeoJSON geometry, and zero errors. Both GitHub Windows CI runs for the implementation commit passed. The earlier CISA walkthrough was performed on 0.1.2.
 
 ## License policies and evidence
 
