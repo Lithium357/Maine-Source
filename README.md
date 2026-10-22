@@ -56,6 +56,8 @@ The home dashboard includes activity history, source mix, recent jobs, filter ou
 
 Project Gutenberg, arXiv, OpenAlex, Common Crawl, and RSS/Atom are visible as **disabled roadmap entries**, not working connectors. Generic website crawling, PDF extraction, recursive GitHub tree recovery, automatic updates, and broad bulk-dump ingestion are not included in this alpha. Sources with no remaining results end naturally rather than fabricating more records.
 
+See the [source expansion research](docs/source-research-2026-10-22.md) for proposed large corpora, public-data portals, cybersecurity collections, and structured scientific sources, with access methods and rights considerations. These recommendations are not additional working connectors.
+
 ## License policies and evidence
 
 The complete installed SPDX identifier list, including deprecated identifiers, is searchable. SPDX `AND`, `OR`, and `WITH` expressions are supported, as are exact custom terms and `LicenseRef-*` declarations. No known license becomes permission simply because content is publicly accessible.
