@@ -1,4 +1,6 @@
-export const sources = [
+import { sourceDefinitions } from './sources/registry.mjs';
+
+const legacySources = [
   { id: 'nvd', name: 'NIST NVD', category: 'Security', mark: 'NV', color: '#d97735', description: 'CVE descriptions, weaknesses, references, and vulnerability metadata.', key: 'Optional API key', input: 'Keyword search (optional)', docs: 'https://nvd.nist.gov/developers/vulnerabilities' },
   { id: 'cisa', name: 'CISA KEV', category: 'Security', mark: 'KE', color: '#c05c59', description: 'Known exploited vulnerabilities and remediation guidance.', docs: 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog' },
   { id: 'github', name: 'GitHub', category: 'Code & computing', mark: 'GH', color: '#454d62', description: 'Public repository code, documentation, and file-level license notices.', key: 'Optional read-only token', input: 'Repositories, one owner/repo per line', docs: 'https://docs.github.com/en/rest/repos/contents' },
@@ -18,11 +20,20 @@ export const sources = [
   { id: 'commoncrawl', name: 'Common Crawl', category: 'Web & news', mark: 'CC', color: '#7b8694', description: 'Planned: WARC ingestion with per-page rights assessment.', planned: true, docs: 'https://commoncrawl.org/' },
   { id: 'rss', name: 'RSS / Atom feeds', category: 'Web & news', mark: 'RS', color: '#c78f4c', description: 'Planned: user-selected feeds with publisher-specific terms.', planned: true },
 ];
+const legacyFields = {
+  github: [{ id: 'extensions', label: 'File extensions, comma separated', default: '.py,.js,.ts,.tsx,.rs,.go,.c,.cpp,.h,.java,.md,.txt' }],
+  stackexchange: [{ id: 'site', label: 'Community', options: ['stackoverflow', 'security', 'softwareengineering', 'electronics', 'engineering', 'math', 'physics', 'stats'] }],
+  wikipedia: [{ id: 'language', label: 'Language code', default: 'en' }],
+  huggingface: [{ id: 'config', label: 'Configuration', placeholder: 'Auto-detect' }, { id: 'split', label: 'Split', placeholder: 'Auto-detect' }, { id: 'textField', label: 'Text column', placeholder: 'Auto-detect' }],
+};
+export const sources = [...legacySources.filter(source => !sourceDefinitions.some(definition => definition.id === source.id)).map(source => ({ ...source, ...(legacyFields[source.id] ? { fields: legacyFields[source.id] } : {}), ...(source.id === 'github' ? { multiline: true } : {}) })), ...sourceDefinitions];
 export const presets = {
-  'Cybersecurity': ['nvd', 'cisa', 'github', 'stackexchange'],
+  'Cybersecurity': ['nvd', 'cisa', 'advisories', 'osv', 'github', 'stackexchange'],
   'CS & engineering': ['github', 'stackexchange', 'nasa', 'europepmc', 'crossref'],
-  'Research': ['europepmc', 'crossref', 'zenodo', 'huggingface'],
-  'General knowledge': ['wikipedia', 'wikidata', 'govinfo'],
+  'Research': ['europepmc', 'crossref', 'arxiv', 'openalex', 'zenodo', 'dataverse', 'huggingface'],
+  'General knowledge': ['wikipedia', 'wikidata', 'govinfo', 'openlibrary'],
+  'Public data': ['ckan', 'socrata', 'dataverse', 'usgs'],
+  'Feeds & files': ['rss', 'jsonl'],
 };
 export const widgets = [
   { id: 'activity', name: 'Collection activity', description: 'Accepted records across your recent runs', size: 'wide' },
@@ -35,7 +46,7 @@ export const widgets = [
 ];
 export const defaultRecipe = () => ({
   name: 'Untitled dataset', sourceIds: [], inputs: {}, settings: {}, blacklist: '',
-  wholeWords: true, caseSensitive: false, licenseMode: 'any', allowLicenses: [], excludeLicenses: [],
-  strictness: 5, minLength: 40, deduplicate: true,
+  wholeWords: true, caseSensitive: false, licenseMode: 'off', allowLicenses: [], excludeLicenses: [],
+  strictness: 1, minLength: 40, deduplicate: true,
   limits: { minutes: 30, megabytes: 100, files: 1000 },
 });

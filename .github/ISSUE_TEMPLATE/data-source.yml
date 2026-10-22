@@ -1,0 +1,28 @@
+name: Suggest a data source
+description: Propose a provider, dataset, or public portal.
+title: "Source: "
+body:
+  - type: input
+    id: source
+    attributes:
+      label: Source name and official URL
+    validations:
+      required: true
+  - type: textarea
+    id: content
+    attributes:
+      label: What should we collect, and what would you use it for?
+      description: Full text, abstracts, code, tables, metadata, original files, or something else?
+    validations:
+      required: true
+  - type: textarea
+    id: access
+    attributes:
+      label: API or bulk-download documentation
+      description: Include formats, credentials needed, approximate size, and license information if known. Never paste a key.
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contributing
+      options:
+        - label: I would like to help implement or test this connector.

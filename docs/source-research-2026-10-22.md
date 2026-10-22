@@ -2,6 +2,8 @@
 
 Researched 2026-10-22. These are recommendations, not implemented connectors. Sizes describe particular releases, not download promises. Access conditions and manifests must be checked again when implementing a connector.
 
+Implementation update: version 0.1.3 implements a subset of these ideas, with narrower scopes where stated (for example, arXiv abstracts and CKAN catalog metadata). See the [current coverage table](../README.md#source-coverage); this research document is not the authoritative implementation status.
+
 ## Recommendation
 
 Build bulk ingestion before adding a long list of record-at-a-time APIs. The highest-return first additions are Common Pile and FineWeb presets through an upgraded Hugging Face reader, Wikimedia exports, OSV, and reusable CKAN/Socrata/Dataverse connectors. Add Software Heritage, scientific papers, patents, and structured scientific collections next.

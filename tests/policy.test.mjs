@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assessLicense, evaluate, licenseMatches, normalizeLicense, licenseIds } from '../src/policy.mjs';
-import { defaultRecipe } from '../src/catalog.mjs';
+import { defaultRecipe as baseRecipe } from '../src/catalog.mjs';
+// These tests exercise the optional gate explicitly, independently of permissive app defaults.
+const defaultRecipe = () => ({ ...baseRecipe(), licenseMode: 'any', strictness: 5 });
 const record = (rights = {}) => ({ title: 'Example', text: 'A useful engineering explanation about parsing and memory safety.', hash: 'one', version: '123', rights: { expression: 'MIT', basis: 'content-notice', scope: 'file', url: 'https://example.org/license', corroborated: true, ...rights } });
 
 test('full SPDX list is available, including uncommon licenses', () => { assert.ok(licenseIds.length > 600); assert.ok(licenseIds.includes('BlueOak-1.0.0')); });

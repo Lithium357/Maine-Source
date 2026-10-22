@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { normalizeLicense } from './policy.mjs';
+import { sourceCollectors } from './sources/registry.mjs';
 
 const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', processEntities: false });
 const arr = value => !value ? [] : Array.isArray(value) ? value : [value];
@@ -188,4 +189,4 @@ async function* govinfo({ input, key, http }) {
     if (next) { const p = new URL(next); p.searchParams.set('api_key', key); next = p.href; }
   }
 }
-export const connectors = { nvd, cisa, nasa, github, stackexchange, wikipedia, wikidata, europepmc, crossref, zenodo, huggingface, govinfo };
+export const connectors = { nvd, cisa, nasa, github, stackexchange, wikipedia, wikidata, europepmc, crossref, zenodo, huggingface, govinfo, ...sourceCollectors };
