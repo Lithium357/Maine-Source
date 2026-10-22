@@ -2,11 +2,11 @@
 
 A Windows desktop workbench for collecting text and code into traceable ML datasets. Pick sources with checkboxes, define reusable recipes, and watch a customizable local dashboard.
 
-**Status: 0.1.1 alpha.** The collector, desktop UI, and Windows installer are implemented. Eleven online connectors have passed small public-data checks; GovInfo needs an authenticated integration check. This is a local application: there is no hosted account or collection backend.
+**Status: 0.1.2 alpha.** The collector, desktop UI, and Windows installer are implemented. Eleven online connectors have passed small public-data checks; GovInfo needs an authenticated integration check. The packaged GUI has been used to select a source, save a recipe, collect two real CISA records, stop at the document limit, and export valid JSONL plus a manifest to the Desktop data folder. This is a local application: there is no hosted account or collection backend.
 
 ## Run or install
 
-Run `Maine Source Setup 0.1.1.exe` from the build's `release/` folder to install for your Windows user. This alpha installer is unsigned; public distribution still needs a signing certificate and release verification. An unpacked app is also generated in `release/win-unpacked/`.
+Run `Maine Source Setup 0.1.2.exe` from the build's `release/` folder to install for your Windows user. This alpha installer is unsigned; public distribution still needs a signing certificate and release verification. An unpacked app is also generated in `release/win-unpacked/`.
 
 For development, install Node.js 24 and pnpm 11, then:
 

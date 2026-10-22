@@ -67,6 +67,17 @@ function renderContent() {
   main.innerHTML = ({ dashboard, sources: sourcePage, recipes: recipePage, jobs: jobPage, datasets: datasetPage, settings: settingsPage }[view])();
   bindPage();
 }
+function refreshShellStatus() {
+  const active = state.jobs.find(job => ['running', 'paused', 'stopping'].includes(job.status));
+  const count = document.querySelector('.sidebar [data-view="sources"] small');
+  if (count) count.textContent = state.selectedSources.length;
+  const footer = document.querySelector('.footer > span:first-child');
+  if (footer) footer.replaceChildren(document.createElement('i'), document.createTextNode(` ${active ? `Collection ${active.status}` : 'Ready to collect'}`));
+  const jobNav = document.querySelector('.sidebar [data-view="jobs"]');
+  const dot = jobNav?.querySelector('.live-dot');
+  if (active && jobNav && !dot) { const indicator = document.createElement('b'); indicator.className = 'live-dot'; jobNav.append(indicator); }
+  else if (!active) dot?.remove();
+}
 function heading(kicker, title, subtitle, actions = '') { return `<div class="page-heading"><div><p class="eyebrow">${kicker}</p><h1>${title}</h1><p class="subtitle">${subtitle}</p></div><div class="heading-actions">${actions}</div></div>`; }
 function dashboard() {
   const t = totals();
@@ -261,6 +272,6 @@ else {
   try {
     state = await call('state:get'); selected = [...state.selectedSources]; shell();
     let refreshTimer;
-    api.subscribe(next => { state = next; const count = document.querySelector('[data-view="sources"] small'); if (count) count.textContent = state.selectedSources.length; clearTimeout(refreshTimer); refreshTimer = setTimeout(() => { if (!document.querySelector('#source-search:focus')) renderContent(); }, 120); });
+    api.subscribe(next => { state = next; refreshShellStatus(); clearTimeout(refreshTimer); refreshTimer = setTimeout(() => { if (!document.querySelector('#source-search:focus')) renderContent(); }, 120); });
   } catch (e) { root.innerHTML = `<div class="boot">Workspace could not open: ${esc(e.message)}</div>`; }
 }
