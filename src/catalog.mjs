@@ -26,7 +26,17 @@ const legacyFields = {
   wikipedia: [{ id: 'language', label: 'Language code', default: 'en' }],
   huggingface: [{ id: 'config', label: 'Configuration', placeholder: 'Auto-detect' }, { id: 'split', label: 'Split', placeholder: 'Auto-detect' }, { id: 'textField', label: 'Text column', placeholder: 'Auto-detect' }],
 };
-export const sources = [...legacySources.filter(source => !sourceDefinitions.some(definition => definition.id === source.id)).map(source => ({ ...source, ...(legacyFields[source.id] ? { fields: legacyFields[source.id] } : {}), ...(source.id === 'github' ? { multiline: true } : {}) })), ...sourceDefinitions];
+const legacyCoverage = {
+  stackexchange: 'Full questions and answers, original HTML, authors, and per-post license metadata.',
+  nasa: 'APOD explanations and direct image/video files when supplied; embedded media availability is reported.',
+  crossref: 'Discover and download publisher full-text PDF/XML links, preserving article metadata and download failures.',
+  zenodo: 'Download deposited research files, extract supported content, and preserve original files and provenance.',
+  wikidata: 'Complete entity JSON including statements and references, plus source metadata.',
+  wikipedia: 'Complete article text and revision-pinned wiki source when supplied by the API.',
+  huggingface: 'Dataset Viewer rows with selected text fields and the complete returned row preserved.',
+  govinfo: 'Government publication HTML and available PDFs, with full-text extraction and original files.',
+};
+export const sources = [...legacySources.filter(source => !sourceDefinitions.some(definition => definition.id === source.id)).map(source => ({ ...source, ...(legacyCoverage[source.id] ? { description: legacyCoverage[source.id] } : {}), ...(legacyFields[source.id] ? { fields: legacyFields[source.id] } : {}), ...(source.id === 'github' ? { multiline: true } : {}) })), ...sourceDefinitions];
 export const presets = {
   'Cybersecurity': ['nvd', 'cisa', 'advisories', 'osv', 'github', 'stackexchange'],
   'CS & engineering': ['github', 'stackexchange', 'nasa', 'europepmc', 'crossref'],
@@ -45,7 +55,7 @@ export const widgets = [
   { id: 'events', name: 'Activity log', description: 'Recent collection decisions and source errors', size: 'wide' },
 ];
 export const defaultRecipe = () => ({
-  name: 'Untitled dataset', sourceIds: [], inputs: {}, settings: {}, blacklist: '',
+  name: 'Untitled dataset', sourceIds: [], inputs: {}, settings: {}, blacklist: '', contentMode: 'full', requireText: false, contentLimits: { maxFileMB: 50, maxRecordMB: 200 },
   wholeWords: true, caseSensitive: false, licenseMode: 'off', allowLicenses: [], excludeLicenses: [],
   strictness: 1, minLength: 40, deduplicate: true,
   limits: { minutes: 30, megabytes: 100, files: 1000 },

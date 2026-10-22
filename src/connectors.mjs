@@ -22,7 +22,7 @@ const githubHeaders = key => ({ ...(key ? { Authorization: `Bearer ${key}` } : {
 async function* nvd({ input, key, http }) {
   for (let start = 0;;) {
     const page = await http.get(url('https://services.nvd.nist.gov/rest/json/cves/2.0', { resultsPerPage: 100, startIndex: start, keywordSearch: input || undefined }), { headers: key ? { apiKey: key } : {}, interval: key ? 650 : 6500 });
-    for (const { cve } of page.vulnerabilities || []) yield { id: cve.id, title: cve.id, text: (cve.descriptions || []).filter(d => d.lang === 'en').map(d => d.value).join('\n'), url: `https://nvd.nist.gov/vuln/detail/${cve.id}`, version: cve.lastModified, rights: unknown(), attribution: cve.sourceIdentifier, metadata: { weaknesses: cve.weaknesses, references: cve.references } };
+    for (const { cve } of page.vulnerabilities || []) yield { id: cve.id, title: cve.id, text: (cve.descriptions || []).filter(d => d.lang === 'en').map(d => d.value).join('\n'), url: `https://nvd.nist.gov/vuln/detail/${cve.id}`, version: cve.lastModified, rights: unknown(), attribution: cve.sourceIdentifier, metadata: { weaknesses: cve.weaknesses, references: cve.references, original: cve } };
     start += page.vulnerabilities?.length || 0;
     if (!page.vulnerabilities?.length || start >= page.totalResults) break;
   }
@@ -32,7 +32,7 @@ async function* cisa({ input, http }) {
   for (const v of page.vulnerabilities || []) {
     const text = `${v.shortDescription}\nRequired action: ${v.requiredAction}\n${v.notes || ''}`;
     if (input && !`${v.vulnerabilityName} ${text}`.toLowerCase().includes(input.toLowerCase())) continue;
-    yield { id: v.cveID, title: `${v.cveID}: ${v.vulnerabilityName}`, text, url: 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog', version: page.catalogVersion, rights: unknown(), attribution: 'CISA', metadata: { dateAdded: v.dateAdded, vendor: v.vendorProject } };
+    yield { id: v.cveID, title: `${v.cveID}: ${v.vulnerabilityName}`, text, url: 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog', version: page.catalogVersion, rights: unknown(), attribution: 'CISA', metadata: { dateAdded: v.dateAdded, vendor: v.vendorProject, original: v } };
   }
 }
 async function* nasa({ input, key, http }) {
@@ -43,7 +43,11 @@ async function* nasa({ input, key, http }) {
   for (const day = new Date(start); day.toISOString().slice(0, 10) <= today; day.setUTCDate(day.getUTCDate() + 1)) {
     const date = day.toISOString().slice(0, 10);
     const page = await http.get(url('https://science.nasa.gov/wp-json/wp/v2/apod-basic/', { date, api_key: key || 'DEMO_KEY' }), { interval: key ? 4000 : 125000 });
-    for (const item of arr(page)) yield { id: item.post_id || date, title: item.title, text: item.explanation, url: item.permalink || item.url, version: item.date, rights: { ...unknown(), notes: item.copyright ? `Copyright notice supplied for APOD media: ${item.copyright}. Text-specific reuse terms have not been established.` : 'No text-specific reuse license supplied by this response.' }, attribution: item.credit || 'NASA APOD' };
+    for (const item of arr(page)) {
+      const media = item.hdurl || item.url;
+      const downloadable = media && /\.(jpe?g|png|gif|webp|mp4)(?:\?|$)/i.test(media);
+      yield { id: item.post_id || date, title: item.title, text: item.explanation, url: item.permalink || item.url, version: item.date, rights: { ...unknown(), notes: item.copyright ? `Copyright notice supplied for APOD media: ${item.copyright}. Text-specific reuse terms have not been established.` : 'No text-specific reuse license supplied by this response.' }, attribution: item.credit || 'NASA APOD', contentRequests: [{ data: item.explanation || '', filename: 'explanation.txt', mediaType: 'text/plain' }, downloadable ? { url: media.replace(/^http:/, 'https:'), filename: new URL(media).pathname.split('/').at(-1), role: 'APOD media' } : { error: 'No direct media file is supplied; embedded video services require a separate connector' }], metadata: { original: item } };
+    }
   }
 }
 async function* github({ input, key, http, settings = {} }) {
@@ -70,7 +74,7 @@ async function* github({ input, key, http, settings = {} }) {
       const notice = text.match(/SPDX-License-Identifier:\s*([^\r\n]+)/)?.[1]?.replace(/\s*(?:\*\/|-->|#)\s*$/, '').trim();
       const fileUrl = `https://github.com/${repo}/blob/${commit.sha}/${file.path.split('/').map(encodeURIComponent).join('/')}`;
       const expression = normalizeLicense(notice) || repoExpression;
-      yield { id: `${repo}/${file.path}@${commit.sha}`, title: `${repo} / ${file.path}`, text, url: fileUrl, version: commit.sha, attribution: repo, rights: expression ? declaration(expression, notice ? fileUrl : `https://github.com/${repo}/tree/${commit.sha}`, notice ? 'file' : 'repository', { basis: notice ? 'content-notice' : 'source-declaration', corroborated: Boolean(notice && repoExpression === expression), conflict: Boolean(notice && repoExpression && repoExpression !== expression) }) : unknown(), metadata: { path: file.path, blob: file.sha, repository: repo } };
+      yield { id: `${repo}/${file.path}@${commit.sha}`, title: `${repo} / ${file.path}`, text, url: fileUrl, version: commit.sha, attribution: repo, rights: expression ? declaration(expression, notice ? fileUrl : `https://github.com/${repo}/tree/${commit.sha}`, notice ? 'file' : 'repository', { basis: notice ? 'content-notice' : 'source-declaration', corroborated: Boolean(notice && repoExpression === expression), conflict: Boolean(notice && repoExpression && repoExpression !== expression) }) : unknown(), contentRequests: [{ data: buffer, filename: file.path.split('/').at(-1), mediaType: 'text/plain', role: 'source file' }], metadata: { path: file.path, blob: file.sha, repository: repo } };
     }
   }
 }
@@ -80,7 +84,20 @@ async function* stackexchange({ input, key, http, settings = {} }) {
   for (let page = 1;;page++) {
     const data = await http.get(url('https://api.stackexchange.com/2.3/questions', { site, page, pagesize: 100, order: 'desc', sort: 'activity', tagged: input, filter: 'withbody', key: key || undefined }), { interval: 1100 });
     if (data.error_message) throw new Error(`Stack Exchange: ${data.error_message}`);
-    for (const item of data.items || []) yield { id: `${site}/${item.question_id}`, title: plain(item.title), text: plain(item.body), url: item.link, version: String(item.last_edit_date || item.creation_date), attribution: `${item.owner?.display_name || 'Unknown author'} (${item.owner?.link || ''})`, rights: item.content_license ? declaration(item.content_license, item.link) : unknown(), metadata: { tags: item.tags, score: item.score } };
+    for (const item of data.items || []) {
+      yield { id: `${site}/${item.question_id}`, title: plain(item.title), text: plain(item.body), url: item.link, version: String(item.last_edit_date || item.creation_date), attribution: `${item.owner?.display_name || 'Unknown author'} (${item.owner?.link || ''})`, rights: item.content_license ? declaration(item.content_license, item.link) : unknown(), contentRequests: [{ data: item.body || '', filename: 'question.html', mediaType: 'text/html' }], metadata: { tags: item.tags, score: item.score, original: item } };
+      if (settings.contentMode === 'metadata') continue;
+      for (let answerPage = 1;; answerPage++) {
+        const answers = await http.get(url(`https://api.stackexchange.com/2.3/questions/${item.question_id}/answers`, { site, page: answerPage, pagesize: 100, order: 'desc', sort: 'votes', filter: 'withbody', key: key || undefined }), { interval: 1100 });
+        if (answers.error_message) throw new Error(`Stack Exchange: ${answers.error_message}`);
+        for (const answer of answers.items || []) {
+          const answerURL = `https://${site === 'stackoverflow' ? 'stackoverflow.com' : `${site}.stackexchange.com`}/a/${answer.answer_id}`;
+          yield { id: `${site}/answer/${answer.answer_id}`, title: `Answer to ${plain(item.title)}`, text: plain(answer.body), url: answerURL, version: String(answer.last_edit_date || answer.creation_date), attribution: `${answer.owner?.display_name || 'Unknown author'} (${answer.owner?.link || ''})`, rights: answer.content_license ? declaration(answer.content_license, answerURL) : unknown(), contentRequests: [{ data: answer.body || '', filename: 'answer.html', mediaType: 'text/html' }], metadata: { questionId: item.question_id, score: answer.score, accepted: answer.is_accepted, original: answer } };
+        }
+        if (answers.backoff) await http.wait(answers.backoff * 1000);
+        if (!answers.has_more || answers.quota_remaining === 0) break;
+      }
+    }
     if (data.backoff) await http.wait(data.backoff * 1000);
     if (!data.has_more || data.quota_remaining === 0) break;
   }
@@ -97,9 +114,10 @@ async function* wikipedia({ input, http, settings = {} }) {
     if (page.error) throw new Error(`Wikipedia: ${page.error.info}`);
     for (const item of Object.values(page.query?.pages || {})) {
       // Whole-article extracts are limited to one article per request by MediaWiki.
-      const content = await http.get(url(base, { action: 'query', pageids: item.pageid, prop: 'extracts|revisions', explaintext: 1, rvprop: 'ids|timestamp', format: 'json' }));
+      const content = await http.get(url(base, { action: 'query', pageids: item.pageid, prop: 'extracts|revisions', explaintext: 1, rvprop: 'ids|timestamp|content', rvslots: 'main', format: 'json' }));
       const current = content.query?.pages?.[item.pageid];
-      yield { id: item.pageid, title: item.title, text: current?.extract, url: item.fullurl, version: String(current?.revisions?.[0]?.revid || ''), attribution: `Wikipedia contributors; history: ${item.fullurl}?action=history`, rights: declaration(site.query?.rightsinfo?.url, site.query?.rightsinfo?.url, 'source'), metadata: { language: lang } };
+      const wikitext = current?.revisions?.[0]?.slots?.main?.['*'];
+      yield { id: item.pageid, title: item.title, text: current?.extract, url: item.fullurl, version: String(current?.revisions?.[0]?.revid || ''), attribution: `Wikipedia contributors; history: ${item.fullurl}?action=history`, rights: declaration(site.query?.rightsinfo?.url, site.query?.rightsinfo?.url, 'source'), ...(wikitext ? { contentRequests: [{ data: current.extract || '', filename: 'article.txt', mediaType: 'text/plain' }, { data: wikitext, filename: 'article.wikitext', mediaType: 'text/plain', role: 'wiki source' }] } : {}), metadata: { language: lang, original: current } };
     }
     continuation = page.continue;
   } while (continuation);
@@ -108,7 +126,10 @@ async function* wikidata({ input, http }) {
   if (!input) throw new Error('Wikidata needs a search term');
   for (let offset = 0;;) {
     const page = await http.get(url('https://www.wikidata.org/w/api.php', { action: 'wbsearchentities', search: input, language: 'en', limit: 50, continue: offset, format: 'json' }));
-    for (const item of page.search || []) yield { id: item.id, title: item.label, text: `${item.label}\n${item.description || ''}\n${(item.aliases || []).join(', ')}`, url: `https://www.wikidata.org/wiki/${item.id}`, rights: declaration('CC0-1.0', 'https://www.wikidata.org/wiki/Wikidata:Licensing', 'source'), attribution: 'Wikidata contributors' };
+    for (const item of page.search || []) {
+      const entity = await http.get(url('https://www.wikidata.org/w/api.php', { action: 'wbgetentities', ids: item.id, format: 'json' }));
+      yield { id: item.id, title: item.label, text: JSON.stringify(entity.entities?.[item.id] || entity), url: `https://www.wikidata.org/wiki/${item.id}`, version: String(entity.entities?.[item.id]?.lastrevid || ''), rights: declaration('CC0-1.0', 'https://www.wikidata.org/wiki/Wikidata:Licensing', 'source'), attribution: 'Wikidata contributors', contentRequests: [{ data: JSON.stringify(entity), filename: `${item.id}.json`, mediaType: 'application/json' }], metadata: { original: entity } };
+    }
     if (page['search-continue'] === undefined) break;
     offset = page['search-continue'];
   }
@@ -127,28 +148,31 @@ async function* europepmc({ input, http }) {
       const license = arr(article.front?.['article-meta']?.permissions?.license)[0];
       const licenseUrl = license?.['@xlink:href'] || license?.['@href'] || findLicenseURL(license);
       const recordUrl = `https://europepmc.org/articles/${item.pmcid}`;
-      yield { id: item.pmcid, title: item.title, text: plain(textOf(article.body)), url: recordUrl, version: item.firstPublicationDate, attribution: item.authorString, rights: declaration(licenseUrl || item.license, licenseUrl || recordUrl, 'record', { basis: license ? 'content-notice' : 'source-declaration', corroborated: Boolean(licenseUrl && normalizeLicense(licenseUrl) === normalizeLicense(item.license)) }), metadata: { doi: item.doi, publicationDate: item.firstPublicationDate } };
+      yield { id: item.pmcid, title: item.title, text: plain(textOf(article.body)), url: recordUrl, version: item.firstPublicationDate, attribution: item.authorString, rights: declaration(licenseUrl || item.license, licenseUrl || recordUrl, 'record', { basis: license ? 'content-notice' : 'source-declaration', corroborated: Boolean(licenseUrl && normalizeLicense(licenseUrl) === normalizeLicense(item.license)) }), contentRequests: [{ data: body, filename: `${item.pmcid}.xml`, mediaType: 'application/xml', role: 'full article XML' }], metadata: { doi: item.doi, publicationDate: item.firstPublicationDate, original: item } };
     }
     if (!items.length || !page.nextCursorMark || page.nextCursorMark === cursor) break;
     cursor = page.nextCursorMark;
   } while (cursor);
 }
-async function* crossref({ input, http }) {
+async function* crossref({ input, http, settings = {} }) {
   if (!input) throw new Error('Crossref needs a research topic');
   let cursor = '*';
   do {
-    const page = await http.get(url('https://api.crossref.org/works', { query: input, rows: 100, cursor, filter: 'has-abstract:true' }), { interval: 1100 });
+    const page = await http.get(url('https://api.crossref.org/works', { query: input, rows: 100, cursor, ...(settings.contentMode === 'metadata' ? { filter: 'has-abstract:true' } : {}) }), { interval: 1100 });
     const items = page.message?.items || [];
-    for (const item of items) yield { id: item.DOI, title: item.title?.[0], text: plain(item.abstract), url: item.URL, version: item.indexed?.['date-time'], rights: unknown(), attribution: (item.author || []).map(a => `${a.given || ''} ${a.family || ''}`.trim()).join(', '), metadata: { doi: item.DOI, paperLicenseDeclarations: item.license, note: 'Full-paper license declarations are not assumed to cover this abstract.' } };
+    for (const item of items) {
+      const links = (item.link || []).filter(link => /pdf|xml|text\/plain/.test(link['content-type'] || ''));
+      yield { id: item.DOI, title: item.title?.[0], text: plain(item.abstract), url: item.URL, version: item.indexed?.['date-time'], rights: settings.contentMode === 'metadata' ? unknown() : declaration(item.license?.[0]?.URL, item.license?.[0]?.URL), attribution: (item.author || []).map(a => `${a.given || ''} ${a.family || ''}`.trim()).join(', '), contentRequests: links.length ? links.map((link, i) => ({ url: link.URL.replace(/^http:/, 'https:'), filename: `paper-${i + 1}.${/pdf/.test(link['content-type']) ? 'pdf' : 'xml'}`, role: 'publisher full text' })) : [{ error: 'No publisher full-text download link was supplied' }], metadata: { doi: item.DOI, paperLicenseDeclarations: item.license, original: item } };
+    }
     if (!items.length || !page.message['next-cursor'] || page.message['next-cursor'] === cursor) break;
     cursor = page.message['next-cursor'];
   } while (cursor);
 }
-async function* zenodo({ input, http }) {
+async function* zenodo({ input, http, settings = {} }) {
   for (let page = 1;;page++) {
     const data = await http.get(url('https://zenodo.org/api/records', { q: input, size: 25, page }), { interval: 1100 });
     const items = data.hits?.hits || [];
-    for (const item of items) yield { id: item.id, title: item.metadata?.title, text: [item.metadata?.title, plain(item.metadata?.description)].filter(Boolean).join('\n'), url: `https://zenodo.org/records/${item.id}`, version: item.updated, attribution: (item.metadata?.creators || []).map(c => c.name).join(', '), rights: declaration('CC0-1.0', 'https://developers.zenodo.org/#licenses', 'source'), metadata: { contentScope: 'record metadata only', attachedFileLicense: item.metadata?.license, doi: item.metadata?.doi } };
+    for (const item of items) yield { id: item.id, title: item.metadata?.title, text: [item.metadata?.title, plain(item.metadata?.description)].filter(Boolean).join('\n'), url: `https://zenodo.org/records/${item.id}`, version: item.updated, attribution: (item.metadata?.creators || []).map(c => c.name).join(', '), rights: settings.contentMode === 'metadata' ? declaration('CC0-1.0', 'https://developers.zenodo.org/#licenses', 'source') : declaration(item.metadata?.license?.id, item.metadata?.license?.url || `https://zenodo.org/records/${item.id}`), contentRequests: item.files?.length ? item.files.map(file => ({ url: file.links?.self || file.links?.download, filename: file.key || 'original.bin', role: 'deposited file' })) : [{ error: 'No deposited file links were supplied' }], metadata: { contentScope: 'deposited files requested', attachedFileLicense: item.metadata?.license, doi: item.metadata?.doi, original: item } };
     if (items.length < 25) break;
   }
 }
@@ -167,7 +191,7 @@ async function* huggingface({ input, key, http, settings = {} }) {
       const fields = settings.textField ? [settings.textField] : Object.keys(item.row || {}).filter(k => typeof item.row[k] === 'string');
       const strings = fields.map(k => typeof item.row[k] === 'string' ? item.row[k] : '').filter(Boolean);
       const recordUrl = `https://huggingface.co/datasets/${input}`;
-      yield { id: `${input}/${chosen.config}/${chosen.split}/${item.row_idx}`, title: `${input} · row ${item.row_idx}`, text: strings.join('\n'), url: recordUrl, version: card.sha, attribution: input, rights: declaration(declared, `${recordUrl}/blob/${card.sha || 'main'}/README.md`, 'repository'), metadata: { config: chosen.config, split: chosen.split, row: item.row_idx, fields, declaredLicenses: rawLicense } };
+      yield { id: `${input}/${chosen.config}/${chosen.split}/${item.row_idx}`, title: `${input} · row ${item.row_idx}`, text: strings.join('\n'), url: recordUrl, version: card.sha, attribution: input, rights: declaration(declared, `${recordUrl}/blob/${card.sha || 'main'}/README.md`, 'repository'), metadata: { config: chosen.config, split: chosen.split, row: item.row_idx, fields, declaredLicenses: rawLicense, original: item.row } };
     }
     if (!page.rows?.length || offset + page.rows.length >= page.num_rows_total) break;
   }
@@ -183,7 +207,7 @@ async function* govinfo({ input, key, http }) {
     for (const item of data.packages || []) {
       const meta = await http.get(url(`https://api.govinfo.gov/packages/${encodeURIComponent(item.packageId)}/summary`, { api_key: key }), { interval: 4000 });
       const text = await http.get(url(`https://api.govinfo.gov/packages/${encodeURIComponent(item.packageId)}/htm`, { api_key: key }), { json: false, interval: 4000 });
-      yield { id: item.packageId, title: item.title, text: plain(text), url: `https://www.govinfo.gov/app/details/${item.packageId}`, version: item.lastModified, rights: unknown(), attribution: meta.governmentAuthor1 || 'GovInfo', metadata: { collection } };
+      yield { id: item.packageId, title: item.title, text: plain(text), url: `https://www.govinfo.gov/app/details/${item.packageId}`, version: item.lastModified, rights: unknown(), attribution: meta.governmentAuthor1 || 'GovInfo', contentRequests: [{ data: text, filename: `${item.packageId}.html`, mediaType: 'text/html' }, { url: `https://www.govinfo.gov/content/pkg/${encodeURIComponent(item.packageId)}/pdf/${encodeURIComponent(item.packageId)}.pdf`, filename: `${item.packageId}.pdf`, role: 'publication PDF' }], metadata: { collection, original: meta } };
     }
     next = data.nextPage;
     if (next) { const p = new URL(next); p.searchParams.set('api_key', key); next = p.href; }

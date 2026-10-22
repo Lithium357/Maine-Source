@@ -1,6 +1,6 @@
 {
   "name": "maine-source",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A local-first desktop workbench for building traceable text datasets",
   "license": "GPL-3.0-only",
   "author": "Maine-Source contributors",
@@ -16,7 +16,11 @@
     "pack": "electron-builder --dir --win --x64"
   },
   "dependencies": {
+    "@mozilla/readability": "^0.6.0",
     "fast-xml-parser": "^5.3.0",
+    "fflate": "^0.8.3",
+    "jsdom": "^30.1.3",
+    "pdf-parse": "^2.4.5",
     "spdx-expression-parse": "^4.0.0",
     "spdx-license-ids": "^3.0.22"
   },
@@ -27,9 +31,25 @@
   "build": {
     "appId": "org.mainesource.desktop",
     "productName": "Maine Source",
-    "directories": { "output": "release" },
-    "files": ["desktop/**", "src/**", "ui/**", "assets/**", "!ui/preview.mjs", "package.json"],
-    "win": { "target": "nsis", "icon": "assets/icon.ico" },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**",
+      "src/**",
+      "ui/**",
+      "assets/**",
+      "!ui/preview.mjs",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
   }
 }

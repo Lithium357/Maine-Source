@@ -35,9 +35,9 @@ test('GitHub advisories follow the Link cursor and retain vulnerability structur
 test('GitHub advisory pagination refuses unexpected hosts before reusing credentials', async () => {
   await assert.rejects(collect('advisories', { http: { async get() { return { data: [], headers: new Headers({ link: '<https://example.org/advisories?after=x>; rel="next"' }) }; } } }), /pagination URL/);
 });
-test('arXiv reads Atom entries and clearly marks abstract scope', async () => {
+test('arXiv reads Atom and requests version-pinned PDF and submitted source', async () => {
   const records = await collect('arxiv', { input: 'cat:cs.CR', http: { async get(address, options) { assert.equal(options.interval, 3100); return '<feed><opensearch:totalResults>1</opensearch:totalResults><entry><id>http://arxiv.org/abs/1234.5678v2</id><title> A paper </title><summary> An abstract about engineering. </summary><updated>2026-01-02</updated><author><name>Ada</name></author><category term="cs.CR"/></entry></feed>'; } } });
-  assert.equal(records[0].text, 'An abstract about engineering.'); assert.equal(records[0].rights.expression, null); assert.match(records[0].url, /^https:/); assert.equal(records[0].metadata.contentScope, 'title and abstract only');
+  assert.equal(records[0].text, 'An abstract about engineering.'); assert.equal(records[0].rights.expression, null); assert.match(records[0].url, /^https:/); assert.equal(records[0].contentRequests.length, 2); assert.match(records[0].contentRequests[0].url, /\/pdf\/1234.5678v2$/); assert.match(records[0].contentRequests[1].url, /\/src\/1234.5678v2$/);
 });
 test('arXiv query errors do not become dataset records', async () => {
   await assert.rejects(collect('arxiv', { input: 'bad', http: { async get() { return '<feed><entry><id>http://arxiv.org/api/errors#bad_query</id><summary>Invalid query</summary></entry></feed>'; } } }), /rejected the query/);
@@ -52,7 +52,7 @@ test('OpenAlex reconstructs inverted abstracts and follows cursors', async () =>
   assert.equal(rows.length, 1); assert.equal(calls, 2); assert.equal(rows[0].text, 'memory safety');
 });
 test('CKAN metadata keeps dataset license separate and rejects API success:false', async () => {
-  const rows = await collect('ckan', { input: 'energy', settings: { portal: 'https://example.org/catalog/' }, http: { async get(address) {
+  const rows = await collect('ckan', { input: 'energy', settings: { portal: 'https://example.org/catalog/', contentMode: 'metadata' }, http: { async get(address) {
     assert.equal(new URL(address).pathname, '/catalog/api/3/action/package_search');
     return { success: true, result: { count: 1, results: [{ id: '1', name: 'energy', title: 'Energy data', notes: '<p>Measured electricity use</p>', license_id: 'cc-by', resources: [{ url: 'https://other.org/data.csv' }] }] } };
   } } });
@@ -82,7 +82,7 @@ test('invalid USGS settings fail before making requests', async () => {
 });
 test('Open Library keeps book metadata distinct from book text', async () => {
   const rows = await collect('openlibrary', { input: 'engineering', http: { async get() { return { numFound: 1, docs: [{ key: '/works/OL1W', title: 'Engineering book', author_name: ['Ada'], subject: ['Robotics'] }] }; } } });
-  assert.match(rows[0].text, /Robotics/); assert.equal(rows[0].metadata.contentScope, 'book catalog metadata only');
+  assert.match(rows[0].text, /Robotics/); assert.match(rows[0].contentRequests[0].error, /No publicly downloadable/);
 });
 test('JSONL preserves original rows and gives row rights precedence over fallback', async () => {
   const rows = await collect('jsonl', { input: 'https://example.org/data.jsonl', settings: { textField: 'body', license: 'CC0-1.0' }, http: { async *lines() { yield ''; yield JSON.stringify({ id: 1, body: 'A full source document', rights: { expression: 'MIT' }, score: 7 }); } } });

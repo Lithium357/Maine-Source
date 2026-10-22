@@ -21,7 +21,7 @@ test('Europe PMC reads nested article-specific Creative Commons evidence', async
 });
 test('Zenodo uses anonymous page-size limits and separates metadata from file rights', async () => {
   const http = { async get(address) { assert.equal(new URL(address).searchParams.get('size'), '25'); return { hits: { hits: [{ id: 1, metadata: { title: 'A sufficiently descriptive research title', license: { id: 'all-rights-reserved' } } }] } }; } };
-  const result = await connectors.zenodo({ input: 'engineering', http }).next(); assert.equal(result.value.rights.expression, 'CC0-1.0'); assert.match(result.value.text, /research title/); assert.equal(result.value.metadata.contentScope, 'record metadata only'); assert.equal(result.value.metadata.attachedFileLicense.id, 'all-rights-reserved');
+  const result = await connectors.zenodo({ input: 'engineering', settings: { contentMode: 'metadata' }, http }).next(); assert.equal(result.value.rights.expression, 'CC0-1.0'); assert.match(result.value.text, /research title/); assert.equal(result.value.metadata.attachedFileLicense.id, 'all-rights-reserved');
 });
 test('NASA media copyright notices never become invented text licenses', async () => {
   const date = new Date().toISOString().slice(0, 10);

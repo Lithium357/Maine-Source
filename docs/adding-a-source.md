@@ -78,6 +78,25 @@ License evidence can use SPDX expressions, `LicenseRef-*`, or custom terms. A de
 
 The collector adds source ID, timestamp, hash, policy decision, and export provenance. It applies keywords, deduplication, optional license filtering, and accepted-output limits. Yield incrementally: do not pre-download an entire archive or run an endless background task. End naturally when exhausted; throw a useful, credential-free error for invalid queries, outages, or inaccessible continuation windows. Close readers in `finally` so stopping a collection releases resources.
 
+## Primary content and original files
+
+Discovery metadata is a starting point. For papers, datasets, books, and articles, provide the primary download requests rather than treating an abstract/description as the collected document:
+
+```js
+yield {
+  id: paper.id, title: paper.title, text: paper.abstract,
+  metadata: { abstract: paper.abstract },
+  contentRequests: [
+    { url: paper.pdfURL, filename: 'paper.pdf', role: 'paper' },
+    { url: paper.sourceURL, filename: 'source.tar.gz', role: 'submitted source' },
+  ],
+};
+```
+
+The engine downloads those originals and extracts text **before** applying keywords. It preserves summary metadata, original files, hashes, and named failures, and counts original bytes toward storage. It also copies originals beside exports. For an original already retrieved through the shared HTTP client, use `{ data: originalTextOrBuffer, filename, mediaType }` to avoid another request. Use `{ filename, error: 'Not available because…' }` to report an absent/restricted component explicitly. Saved credentials may be used in a request but must never appear in persisted URLs, metadata, or messages.
+
+No request list means the yielded text/structured original is itself the primary material (for example, an advisory or observation). Metadata-only mode strips content requests without downloading them; source adapters should avoid additional discovery detail calls when `settings.contentMode === 'metadata'`. Do not silently fall back to summaries in full mode. For large multi-file datasets, yield resources as separate records so stopping limits and progress remain useful. See [content coverage](content-coverage.md) for current formats and limits.
+
 ## Verification
 
 `tests/sources.test.mjs` checks catalog/handler agreement and declarative settings for every registered source. Add meaningful fixture tests for your source: multiple pages, record mapping, exhaustion, errors, and any source-specific ambiguity. HTTP and engine tests cover shared budgets and cancellation.

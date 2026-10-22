@@ -72,6 +72,18 @@ export class HttpClient {
   async post(url, body, options = {}) {
     return this.get(url, { ...options, method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json', ...options.headers } });
   }
+  async binary(url, options = {}) {
+    const { maxBytes = 50 * 1024 * 1024, headers = {} } = options;
+    const response = await this.request(url, { ...options, json: false, timeoutMs: 300000, publicRedirects: !Object.keys(headers).length });
+    if (Number(response.headers.get('content-length')) > maxBytes) { await response.body?.cancel(); throw new Error('File exceeds download size limit'); }
+    const chunks = []; let bytes = 0;
+    for await (const chunk of response.body) {
+      this.signal?.throwIfAborted(); bytes += chunk.length;
+      if (bytes > maxBytes) throw new Error('File exceeds download size limit');
+      chunks.push(chunk);
+    }
+    return { data: Buffer.concat(chunks), mediaType: response.headers.get('content-type')?.split(';')[0] || 'application/octet-stream' };
+  }
   async *lines(url, { maxBytes = 100 * 1024 * 1024, maxLineBytes = 12 * 1024 * 1024 } = {}) {
     const response = await this.request(url, { json: false, timeoutMs: 300000, publicRedirects: true });
     if (Number(response.headers.get('content-length')) > maxBytes) { await response.body?.cancel(); throw new Error('JSONL input exceeds input byte budget'); }

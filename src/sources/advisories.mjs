@@ -16,7 +16,7 @@ export default {
         id: item.ghsa_id, title: item.summary, text: item.description || item.summary, url: item.html_url,
         version: item.updated_at, attribution: 'GitHub Advisory Database contributors',
         rights: rights('CC-BY-4.0', 'https://github.com/github/advisory-database/blob/main/LICENSE.md', 'source'),
-        metadata: { cve: item.cve_id, identifiers: item.identifiers, severity: item.severity, vulnerabilities: item.vulnerabilities, cwes: item.cwes, references: item.references },
+        metadata: { cve: item.cve_id, identifiers: item.identifiers, severity: item.severity, vulnerabilities: item.vulnerabilities, cwes: item.cwes, references: item.references, original: item },
       };
       const nextLink = headers.get('link')?.split(',').find(part => /rel="next"/.test(part))?.match(/<([^>]+)>/)?.[1];
       if (!nextLink) break;

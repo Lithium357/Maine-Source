@@ -74,6 +74,12 @@ app.whenReady().then(async () => {
     const url = new URL(address); if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Only HTTPS links may be opened');
     await shell.openExternal(url.href);
   }));
+  ipcMain.handle('attachment:show', respond(async ({ id, relative }) => {
+    if (!collector.jobs.some(job => job.id === id) || typeof relative !== 'string' || !/^assets\/[0-9]{8}\/[a-zA-Z0-9._-]+$/.test(relative)) throw new Error('Invalid original-file reference');
+    const file = path.join(storage.datasets, id, relative);
+    await fs.access(file);
+    shell.showItemInFolder(file); // Reveal only; never execute downloaded files.
+  }));
   ipcMain.handle('data:open', respond(async () => { const error = await shell.openPath(storage.data); if (error) throw new Error(error); }));
   await window.loadFile(uiFile);
   window.on('close', async event => {
