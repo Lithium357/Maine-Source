@@ -27,3 +27,38 @@ Select sources with checkboxes, add optional API keys locally, test connections,
 Fill in the commit/tag, Windows build/lifecycle CI link, automated test result, live provider samples (including failures), and known unverified scenarios. Do not copy older version results as though they verify this installer.
 
 See the changelog, source coverage, security policy, and beta test guide in the repository. Report reproducible public examples with the bug report form; never include credentials or private datasets.
+
+<!-- maine-source:sources:start -->
+## All implemented sources and API keys
+
+This complete list is repeated in every release, including sources introduced in earlier versions. It covers 24 implemented sources, including local files; roadmap-only entries are excluded. Links go to the providers, not to credentials stored by this app.
+
+| Source | Key / token and access | Signup and source links |
+| --- | --- | --- |
+| NIST NVD | Optional; a key raises the request limit. | [Get a key / token](https://nvd.nist.gov/developers/request-an-api-key) · [Source / API documentation](https://nvd.nist.gov/developers/vulnerabilities) |
+| CISA KEV | No API key needed for the implemented public connector. | [Source / API documentation](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) |
+| GitHub | Optional for public repositories. Use read-only access; write permissions are unnecessary. | [Get a key / token](https://github.com/settings/personal-access-tokens/new) · [Source / API documentation](https://docs.github.com/en/rest/repos/contents) |
+| Stack Exchange | Optional application key. Register an app on Stack Apps; an OAuth access token is not needed for this connector. | [Get a key / token](https://stackapps.com/apps/oauth/register) · [Source / API documentation](https://api.stackexchange.com/docs) |
+| NASA Open APIs | Request a NASA API key; restricted DEMO_KEY access is available. | [Get a key / token](https://api.nasa.gov/) · [Source / API documentation](https://api.nasa.gov/) |
+| Europe PMC | No API key needed for the implemented public connector. | [Source / API documentation](https://europepmc.org/RestfulWebService) |
+| Crossref | No API key needed for the implemented public connector. | [Source / API documentation](https://api.crossref.org/swagger-ui/index.html) |
+| Zenodo | No API key needed for the implemented public connector. | [Source / API documentation](https://developers.zenodo.org/) |
+| Hugging Face | Optional read-only token; gated datasets also need the provider’s access approval. | [Get a key / token](https://huggingface.co/settings/tokens) · [Source / API documentation](https://huggingface.co/docs/dataset-viewer/en/rows) |
+| Wikipedia | No API key needed for the implemented public connector. | [Source / API documentation](https://www.mediawiki.org/wiki/API:Main_page) |
+| Wikidata | No API key needed for the implemented public connector. | [Source / API documentation](https://www.wikidata.org/wiki/Wikidata:Data_access) |
+| GovInfo | An api.data.gov key is required for normal use; the public demo key is limited. | [Get a key / token](https://www.govinfo.gov/api-signup) · [Source / API documentation](https://www.govinfo.gov/developers) |
+| Local files | No API key; choose files on your computer. | Local files on your machine |
+| GitHub Security Advisories | Optional read-only GitHub token. The GitHub source and this source use separate credential entries. | [Get a key / token](https://github.com/settings/personal-access-tokens/new) · [Source / API documentation](https://docs.github.com/en/rest/security-advisories/global-advisories) |
+| OSV package vulnerabilities | No API key needed for the implemented public connector. | [Source / API documentation](https://google.github.io/osv.dev/post-v1-query/) |
+| arXiv papers & source | No API key needed for the implemented public connector. | [Source / API documentation](https://info.arxiv.org/help/api/user-manual.html) |
+| OpenAlex | Get a free account and copy Settings → API key. A key is needed for cursor paging beyond page one and metered content; usage budgets apply. | [Get a key / token](https://openalex.org/settings/api-key) · [Source / API documentation](https://help.openalex.org/api/) |
+| CKAN public-data portals | No API key needed for the implemented public connector. | [Source / API documentation](https://docs.ckan.org/en/latest/api/) |
+| Socrata public tables | No API key needed for the implemented public connector. | [Source / API documentation](https://dev.socrata.com/docs/queries/) |
+| Research Dataverse | No API key needed for the implemented public connector. | [Source / API documentation](https://guides.dataverse.org/en/latest/api/search.html) |
+| RSS / Atom feeds | No API key needed for the implemented public connector. | [Source / API documentation](https://www.rssboard.org/rss-specification) |
+| USGS Earthquake Catalog | No API key needed for the implemented public connector. | [Source / API documentation](https://earthquake.usgs.gov/fdsnws/event/1/) |
+| Open Library books | No API key needed for the implemented public connector. | [Source / API documentation](https://openlibrary.org/dev/docs/api/search) |
+| HTTPS JSONL / gzip files | No API key needed for the implemented public connector. | [Source / API documentation](https://jsonlines.org/) |
+
+Enter keys locally in **Connections & settings**, then use **Test connection**. Request read-only access. A successful connection check does not guarantee permission for every repository, dataset, or download.
+<!-- maine-source:sources:end -->

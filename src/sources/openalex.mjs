@@ -10,6 +10,7 @@ export function abstractText(index) {
 export default {
   id: 'openalex', name: 'OpenAlex', category: 'Science & engineering', mark: 'OA', color: '#5c8d93',
   description: 'Download available open-access paper PDFs, with research metadata, abstracts, and citation provenance.',
+  credentialUrl: 'https://openalex.org/settings/api-key', credentialHelp: 'Get a free account and copy Settings → API key. A key is needed for cursor paging beyond page one and metered content; usage budgets apply.',
   key: 'Optional OpenAlex API key (API budget applies)', input: 'Research topic', docs: 'https://help.openalex.org/api/',
   fields: [{ id: 'contentAccess', label: 'Full-text access', options: ['Public publisher PDF', 'OpenAlex content API (metered; key required)'] }],
   async *collect({ input, key, http, settings = {}, resume = {}, checkpoint = async () => {} }) {

@@ -6,7 +6,9 @@ export default {
   description: 'Describe the exact content collected here.',
   input: 'Search topic', docs: 'https://example.org/api-docs',
   fields: [{ id: 'language', label: 'Language', options: ['en', 'fr'] }],
-  // Add key: 'Optional API key' only if the service supports credentials.
+  // If credentials are supported, add key: 'Optional API key' and
+  // credentialUrl: 'https://provider.example/key-signup', plus optional credentialHelp.
+  // Run node scripts/release-notes.mjs --update-template after registering it.
   async *collect({ input, settings = {}, http }) {
     if (!input) throw new Error('Example source needs a search topic');
     for (let pageNumber = 1;; pageNumber++) {

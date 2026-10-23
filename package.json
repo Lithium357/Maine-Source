@@ -18,7 +18,8 @@
     "checksums": "node scripts/checksums.mjs",
     "predist": "node scripts/notices.mjs",
     "postdist": "node scripts/checksums.mjs",
-    "soak": "node scripts/soak.mjs"
+    "soak": "node scripts/soak.mjs",
+    "release-notes": "node scripts/release-notes.mjs"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

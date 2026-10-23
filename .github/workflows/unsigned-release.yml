@@ -31,6 +31,8 @@ jobs:
           if ($env:RELEASE_TAG -ne "v$version") { throw 'Tag must match package version' }
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      - name: Generate release notes with every source and API-key link
+        run: node scripts/release-notes.mjs
       - run: pnpm test
       - run: pnpm audit --prod --audit-level=high
       - name: Build explicitly unsigned installer
@@ -50,5 +52,6 @@ jobs:
           path: |
             release/*.exe
             release/SHA256SUMS.txt
+            release/RELEASE_NOTES.md
             release/UNSIGNED-RELEASE.txt
             THIRD-PARTY-NOTICES.txt

@@ -4,7 +4,8 @@
 
 1. Copy `docs/templates/example-source.mjs` to `src/sources/your-source.mjs`.
 2. Import it and add it to `sourceModules` in `src/sources/registry.mjs`.
-3. Add mapping/pagination tests to `tests/`; optionally add a public check to `scripts/smoke-sources.mjs`.
+3. Set `docs` to official HTTPS documentation; if the source uses a credential, set `credentialUrl` to its official signup/token page and optionally `credentialHelp` to concise setup instructions. Run `node scripts/release-notes.mjs --update-template`. Every release repeats all implemented sources, and `pnpm check` rejects missing links or a stale table.
+4. Add mapping/pagination tests to `tests/`; optionally add a public check to `scripts/smoke-sources.mjs`.
 
 The registry supplies the checkbox catalog, source-specific form fields, credential controls, recipe validation, and collector dispatch. Existing sources in `src/connectors.mjs` predate this contract; new work should use source modules.
 
@@ -23,6 +24,7 @@ Export a default object with:
 | `input` | Label for the main query/URL input. |
 | `multiline` | Optional `true` for lists of URLs/repositories. |
 | `key` | Optional credential label. Adding it automatically enables encrypted/session credential controls for this source ID. |
+| `credentialUrl`, `credentialHelp` | Official HTTPS key/token signup link (required when `key` is set), plus optional setup guidance. Included in every release’s full source list. |
 | `fields` | Optional declarative settings, described below. |
 | `collect(context)` | Async generator yielding individual records. |
 

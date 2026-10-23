@@ -3,6 +3,7 @@ import { endpoint, rights } from './helpers.mjs';
 export default {
   id: 'advisories', name: 'GitHub Security Advisories', category: 'Security', mark: 'SA', color: '#a96b51',
   description: 'Reviewed vulnerability descriptions, affected packages, version ranges, and CVE aliases.',
+  credentialUrl: 'https://github.com/settings/personal-access-tokens/new', credentialHelp: 'Optional read-only GitHub token. The GitHub source and this source use separate credential entries.',
   key: 'Optional read-only GitHub token', input: 'Affected package, e.g. lodash (optional)',
   docs: 'https://docs.github.com/en/rest/security-advisories/global-advisories',
   fields: [{ id: 'ecosystem', label: 'Package ecosystem', options: ['', 'npm', 'pip', 'maven', 'go', 'rust', 'nuget', 'rubygems', 'composer', 'actions', 'pub', 'swift', 'erlang', 'other'] }],

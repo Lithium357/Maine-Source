@@ -39,6 +39,8 @@ The home dashboard includes activity history, source mix, recent jobs, filter ou
 
 ## Source coverage
 
+Every release includes the [complete source and API-key signup list](docs/release-notes-template.md#all-implemented-sources-and-api-keys), including sources from earlier versions. Sources without a key are explicitly marked. The list is generated from the implemented source catalog; release workflows attach it and maintain it in the GitHub release description.
+
 | Connector | Collected content | Credential | Licensing behavior |
 | --- | --- | --- | --- |
 | NIST NVD | CVE descriptions plus complete returned CVE JSON | Optional NVD API key | Unknown unless applicable evidence is supplied |

@@ -1,0 +1,33 @@
+name: Complete release source links
+on:
+  release:
+    types: [created, published, edited, prereleased]
+permissions:
+  contents: write
+concurrency:
+  group: release-source-links-${{ github.event.release.id }}
+  cancel-in-progress: true
+jobs:
+  source-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Generate every implemented source from the released version
+        run: node scripts/release-notes.mjs --sources-only
+      - name: Keep the full list in the GitHub release body
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const section = fs.readFileSync('release/SOURCE-ACCESS.md', 'utf8').trimEnd();
+            const release_id = context.payload.release.id;
+            const { data: release } = await github.rest.repos.getRelease({ ...context.repo, release_id });
+            const existing = release.body || '';
+            const managed = /<!-- maine-source:sources:start -->[\s\S]*?<!-- maine-source:sources:end -->/;
+            const body = managed.test(existing) ? existing.replace(managed, () => section) : `${existing.trimEnd()}\n\n${section}\n`;
+            if (body !== existing) await github.rest.repos.updateRelease({ ...context.repo, release_id, body });
