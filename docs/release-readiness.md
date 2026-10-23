@@ -1,6 +1,6 @@
-# Release readiness — 2026-10-22
+# Release readiness — 2026-10-23
 
-Current build: **0.2.0 alpha**, not a 1.0 release. Development stays on `main` until launch. This checklist separates implementation and local evidence from external release gates.
+Current build: **0.2.1 alpha**, not a 1.0 release. Development stays on `main` until launch. This checklist separates implementation and local evidence from external release gates.
 
 ## Implemented and locally checked
 
@@ -40,3 +40,18 @@ The 0.2.0 unpacked Windows build opened the existing 0.1.5 workspace, retained a
 ## Manual signed distribution
 
 The `Signed release candidate` workflow is manually triggered for an existing version tag. It verifies the tag matches `package.json`, requires `CSC_LINK` and `CSC_KEY_PASSWORD` signing secrets, runs checks/tests/audit, builds with code signing required, verifies Authenticode, generates SHA-256 checksums, and uploads artifacts. It does not publish a GitHub release automatically. After the checklist passes, attach those exact artifacts to a release and publish deliberately.
+
+## Follow-up verification — 2026-10-23
+
+- **145 automated tests pass**, including transport retry/cancellation, alternate-location license selection, and public-only archive filtering.
+- The Open Library `public_scan_b:true` query returned zero matches; the documented `ebook_access:public` query returned public editions. Corrected the connector and successfully downloaded full book text/PDF (4,352,272 extracted characters in the sample).
+- arXiv responded successfully on recheck: original PDF and submitted source, 130,377 extracted characters, both originals saved. The previous timeouts were availability failures, not missing-content substitutions.
+- OpenAlex can try up to five supplied public PDF locations, with major repositories preferred. The actual successful location's URL and license are retained. A reproducible “Attention Is All You Need” sample downloaded 39,970 characters. A publisher-specific Nature redirect remains inaccessible; the app does not bypass it.
+- Crossref now accepts unspecified-format full-text links and detects actual response formats; the earlier engineering sample still returned partial content. This is reported as partial, not cleared as a universally reliable publisher download.
+- The packaged 0.2.1 runtime self-test passed local collection, HTML extraction subprocess, Unicode export, original-file validation, and reopening an isolated test dataset.
+- No usable code-signing certificate, signing environment variables, Windows Sandbox, or Hyper-V command tools were available in this environment. No signing identity was created or purchased.
+- CI now builds/installs 0.1.5 on a disposable Windows runner, creates a legacy dataset using that installed runtime, upgrades to the current installer, verifies legacy text and current HTML extraction/export without external Node/Python on PATH, uninstalls, and checks data preservation. **Added, not yet verified at the time of this update.** This runner includes other development software; removing runtimes from PATH is useful evidence but not a pristine consumer VM certification.
+- A separate Windows CI job runs a **two-hour public CISA-data replay**, with unique test identities, injected outages, stop/restart/resume, hash validation, and streamed export verification. This is a controlled replay, not a two-hour provider API availability test. Its artifact must pass before checking off sustained testing.
+- Local ten-minute public-data replay is being run separately; its measured result is recorded after completion.
+
+Source references: [Open Library access fields](https://openlibrary.org/search/howto/more), [OpenAlex location-specific copies/licenses](https://help.openalex.org/data/locations/), [arXiv API](https://info.arxiv.org/help/api/user-manual.html). Public vulnerability reporting still requires the owner's repository administration setting; see [GitHub's instructions](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository).

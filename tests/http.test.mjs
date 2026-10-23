@@ -2,6 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HttpClient } from '../src/http.mjs';
 import { gzipSync } from 'node:zlib';
+
+test('transient GET transport failures retry without exposing credentials', async () => {
+  let calls = 0; const waits = [];
+  const http = new HttpClient({ fetcher: async () => { if (++calls < 3) throw new TypeError('fetch failed https://example.org/?api_key=secret'); return Response.json({ ok: true }); }, sleep: async ms => waits.push(ms) });
+  assert.deepEqual(await http.get('https://example.org/?api_key=secret', { interval: 0 }), { ok: true });
+  assert.equal(calls, 3); assert.deepEqual(waits, [2000, 4000]);
+});
+test('non-idempotent transport errors are not retried and cancellation interrupts backoff', async () => {
+  let calls = 0;
+  const http = new HttpClient({ fetcher: async () => { calls++; throw new TypeError('secret'); } });
+  await assert.rejects(http.post('https://example.org/', '{}'), /network request/); assert.equal(calls, 1);
+  const controller = new AbortController();
+  const cancellable = new HttpClient({ signal: controller.signal, fetcher: async () => { controller.abort(); throw new TypeError('secret'); } });
+  await assert.rejects(cancellable.get('https://example.org/'), e => e.name === 'AbortError');
+});
 test('credentials are not included in HTTP errors', async () => {
   const http = new HttpClient({ fetcher: async () => new Response('secret error', { status: 401 }) });
   await assert.rejects(http.get('https://example.org/?api_key=private-token'), e => !e.message.includes('private-token') && /401/.test(e.message));

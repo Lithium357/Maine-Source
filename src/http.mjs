@@ -23,12 +23,20 @@ export class HttpClient {
       await this.wait((this.next.get(host) || 0) - this.clock());
       this.next.set(host, this.clock() + interval);
       const timeout = AbortSignal.timeout(timeoutMs);
-      const response = await this.fetcher(url, {
+      let response;
+      try { response = await this.fetcher(url, {
         method, body,
         headers: { 'User-Agent': 'MaineSource/0.1 (dataset collection; https://github.com/Lithium357/Maine-Source)', Accept: json ? 'application/json' : '*/*', ...headers },
         signal: this.signal ? AbortSignal.any([this.signal, timeout]) : timeout,
         redirect: publicRedirects ? 'manual' : 'error',
-      });
+      }); } catch (error) {
+        this.signal?.throwIfAborted();
+        if (/redirect/i.test(error.message)) throw new Error(`${host}: redirect refused`);
+        // Retry idempotent reads after transient transport failures, never credentialed redirects.
+        if (method !== 'GET' || attempt === 3 || !['TypeError', 'TimeoutError'].includes(error.name) || /redirect/i.test(error.message)) throw new Error(`${host}: network request failed (${error.name || 'transport error'})`);
+        this.log('rate', `${host}: network interruption; retrying.`);
+        await this.wait(2000 * 2 ** attempt); continue;
+      }
       if (publicRedirects && [301, 302, 303, 307, 308].includes(response.status)) {
         await response.body?.cancel();
         const location = response.headers.get('location');

@@ -6,6 +6,7 @@ const expandedLimit = 100 * 1024 * 1024;
 const textFile = /\.(tex|bib|sty|cls|txt|md|rst|csv|tsv|json|jsonl|xml|xhtml|html?|py|js|ts|c|cpp|h|rs|go|java|r|sql|yaml|yml)$/i;
 export function publicURL(address) {
   const u = new URL(address);
+  u.username = ''; u.password = '';
   for (const key of [...u.searchParams.keys()]) if (/key|token|signature|credential|secret/i.test(key)) u.searchParams.delete(key);
   return u.href;
 }
@@ -105,18 +106,29 @@ export async function materialize(record, http, settings = {}) {
   if (settings.contentMode === 'metadata') return { ...base, metadata: { ...base.metadata, contentScope: 'metadata only (explicit selection)', contentStatus: 'metadata' } };
   const maxBytes = Math.min(500, Math.max(1, Number(settings.maxFileMB) || 50)) * 1024 * 1024;
   const totalLimit = Math.min(1000, Math.max(1, Number(settings.maxRecordMB) || 200)) * 1024 * 1024;
-  const attachments = [], texts = [], failures = []; let bytes = 0, textBytes = 0;
+  const attachments = [], texts = [], failures = []; let bytes = 0, textBytes = 0, selectedRights;
   for (const request of contentRequests) {
     http.signal?.throwIfAborted();
     try {
       if (request.error) throw new Error(request.error);
-      const result = request.data ? { data: Buffer.from(request.data), mediaType: request.mediaType || 'application/octet-stream' } : await http.binary(request.url, { interval: request.interval || 1100, maxBytes: Math.min(maxBytes, totalLimit - bytes), headers: request.headers || {} });
+      const attempts = []; let result, selected;
+      const candidates = [request, ...(request.alternatives || []).slice(0, 4)];
+      for (const candidate of candidates) {
+        http.signal?.throwIfAborted();
+        try {
+          result = candidate.data !== undefined ? { data: Buffer.from(candidate.data), mediaType: candidate.mediaType || request.mediaType || 'application/octet-stream' } : await http.binary(candidate.url, { interval: candidate.interval || request.interval || 1100, maxBytes: Math.min(maxBytes, totalLimit - bytes), headers: candidate.headers || {} });
+          if (/\.pdf$/i.test(request.filename || '') && Buffer.from(result.data).subarray(0, 5).toString() !== '%PDF-') throw new Error('The server returned a non-PDF response for a paper PDF');
+          selected = candidate; break;
+        } catch (error) { http.signal?.throwIfAborted(); attempts.push({ url: candidate.url ? publicURL(candidate.url) : undefined, message: error.message }); }
+      }
+      if (!selected) throw new Error(attempts.map(a => a.message).join('; '));
       const data = Buffer.from(result.data);
       if (data.length > maxBytes || bytes + data.length > totalLimit) throw new Error('Original content exceeds per-record download limit');
       if (/\.pdf$/i.test(request.filename || '') && data.subarray(0, 5).toString() !== '%PDF-') throw new Error('The server returned a non-PDF response for a paper PDF');
       bytes += data.length;
       const filename = data.subarray(0, 5).toString() === '%PDF-' && !/\.pdf$/i.test(request.filename || '') ? `${request.filename || 'original'}.pdf` : request.filename || 'original.bin';
-      const attachment = { filename, data, mediaType: result.mediaType, url: request.url ? publicURL(request.url) : undefined, role: request.role || 'original' };
+      const attachment = { filename, data, mediaType: result.mediaType, url: selected.url ? publicURL(selected.url) : undefined, role: request.role || 'original', ...(attempts.length ? { alternativeFailures: attempts } : {}), ...(selected.rights ? { rights: selected.rights } : {}) };
+      if (request.primaryRights && selected.rights) selectedRights = selected.rights;
       attachments.push(attachment);
       try {
         const parsed = await extractText(data, filename, result.mediaType, { signal: http.signal });
@@ -135,5 +147,5 @@ export async function materialize(record, http, settings = {}) {
   }
   if (!attachments.length) throw new Error(`Underlying content unavailable: ${failures.map(f => `${f.file}: ${f.message}`).join('; ')}`);
   for (const failure of failures) http.log?.('warning', `${failure.file}: ${failure.message}`);
-  return { ...base, text: texts.join('\n\n'), attachments, metadata: { ...base.metadata, sourceSummary: base.text, contentScope: 'underlying content', contentStatus: failures.length ? 'partial' : 'downloaded', contentFailures: failures, extractionEmpty: !texts.length } };
+  return { ...base, ...(selectedRights ? { rights: selectedRights } : {}), text: texts.join('\n\n'), attachments, metadata: { ...base.metadata, sourceSummary: base.text, contentScope: 'underlying content', contentStatus: failures.length ? 'partial' : 'downloaded', contentFailures: failures, extractionEmpty: !texts.length } };
 }

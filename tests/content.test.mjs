@@ -23,6 +23,15 @@ function tar(name, text) {
 }
 const base = () => ({ id: 'paper1', title: 'A paper', text: 'Abstract without the excluded word', rights: { expression: null }, contentRequests: [{ data: pdf('Full paper contains dogs and complete engineering results.'), filename: 'paper.pdf', mediaType: 'application/pdf' }, { data: gzipSync(tar('main.tex', '\\section{Results}\nComplete source manuscript.')), filename: 'source.tar.gz' }] });
 
+test('alternate PDF locations retain the successful URL and its license rather than the failed copy license', async () => {
+  const attempted = [];
+  const record = { id: 'fallback', text: 'Abstract', rights: { expression: 'CC0-1.0' }, contentRequests: [{ url: 'https://publisher.example/paper.pdf', filename: 'paper.pdf', primaryRights: true, rights: { expression: 'CC0-1.0' }, alternatives: [{ url: 'https://repository.example/paper.pdf', rights: { expression: 'CC-BY-4.0' } }] }] };
+  const result = await materialize(record, { async binary(url) { attempted.push(url); if (url.includes('publisher')) return { data: Buffer.from('<html>Login</html>'), mediaType: 'text/html' }; return { data: pdf('Complete public manuscript.'), mediaType: 'application/pdf' }; } });
+  assert.equal(attempted.length, 2); assert.equal(result.rights.expression, 'CC-BY-4.0');
+  assert.equal(result.attachments[0].url, 'https://repository.example/paper.pdf'); assert.equal(result.metadata.contentStatus, 'downloaded');
+  assert.equal(result.attachments[0].alternativeFailures.length, 1); assert.match(result.text, /Complete public manuscript/);
+});
+
 test('full content extracts PDF text and LaTeX members and retains both originals', async () => {
   const record = await materialize(base(), {});
   assert.match(record.text, /Full paper contains dogs/); assert.match(record.text, /Complete source manuscript/);

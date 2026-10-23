@@ -22,7 +22,13 @@ async function workspaceOperation(fn) {
   try { return await fn(); } finally { workspaceBusy = false; emit(); }
 }
 
-if (!app.requestSingleInstanceLock()) app.quit();
+const selfTestAt = process.argv.indexOf('--self-test');
+if (selfTestAt >= 0) {
+  const parent = process.argv[selfTestAt + 1];
+  if (!parent || !path.isAbsolute(parent)) throw new Error('Self-test requires an absolute temporary parent folder');
+  const profile = path.join(parent, 'diagnostic-profile'); require('node:fs').mkdirSync(profile, { recursive: true }); app.setPath('userData', profile);
+  app.whenReady().then(() => require('./self-test.cjs').run(process.argv[selfTestAt + 1])).then(() => app.exit(0)).catch(error => { process.stderr.write(error.stack || error.message); app.exit(1); });
+} else if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(async () => {
   engine = await import('../src/engine.mjs');
   datasets = await import('../src/datasets.mjs');

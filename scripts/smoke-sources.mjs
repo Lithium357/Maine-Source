@@ -3,7 +3,7 @@ import { connectors } from '../src/connectors.mjs';
 import { HttpClient } from '../src/http.mjs';
 import { materialize } from '../src/content.mjs';
 const cases = { nvd: 'buffer', cisa: '', github: 'Lithium357/Maine-Source', nasa: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10), stackexchange: 'python', wikipedia: 'engineering', wikidata: 'engineering', europepmc: 'software', crossref: 'engineering', zenodo: 'engineering', huggingface: 'stanfordnlp/imdb' };
-Object.assign(cases, { advisories: 'lodash', osv: 'requests', arxiv: 'cat:cs.CR', openalex: 'engineering', ckan: 'energy', socrata: 'https://data.cityofnewyork.us/resource/erm2-nwe9.json', dataverse: 'engineering', rss: 'https://www.nasa.gov/feed/', usgs: '', openlibrary: 'engineering' });
+Object.assign(cases, { advisories: 'lodash', osv: 'requests', arxiv: 'cat:cs.CR', openalex: 'Attention Is All You Need', ckan: 'energy', socrata: 'https://data.cityofnewyork.us/resource/erm2-nwe9.json', dataverse: 'engineering', rss: 'https://www.nasa.gov/feed/', usgs: '', openlibrary: 'engineering' });
 cases.jsonl = 'https://huggingface.co/datasets/databricks/databricks-dolly-15k/resolve/main/databricks-dolly-15k.jsonl';
 const full = process.argv.includes('--full');
 const selected = process.argv.slice(2).filter(arg => arg !== '--full');

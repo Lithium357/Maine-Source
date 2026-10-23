@@ -84,6 +84,13 @@ test('Open Library keeps book metadata distinct from book text', async () => {
   const rows = await collect('openlibrary', { input: 'engineering', http: { async get() { return { numFound: 1, docs: [{ key: '/works/OL1W', title: 'Engineering book', author_name: ['Ada'], subject: ['Robotics'] }] }; } } });
   assert.match(rows[0].text, /Robotics/); assert.match(rows[0].contentRequests[0].error, /No publicly downloadable/);
 });
+test('Open Library uses public access search and skips private archive files', async () => {
+  const rows = await collect('openlibrary', { input: 'engineering', http: { async get(address) {
+    if (address.includes('/search.json')) { assert.match(new URL(address).searchParams.get('q'), /ebook_access:public/); return { numFound: 1, docs: [{ key: '/works/OL1W', title: 'Book', ebook_access: 'public', ia: ['book'] }] }; }
+    return { files: [{ name: 'private.pdf', private: 'true' }, { name: 'public_djvu.txt' }] };
+  } } });
+  assert.equal(rows[0].contentRequests.length, 1); assert.match(rows[0].contentRequests[0].url, /public_djvu\.txt/);
+});
 test('JSONL preserves original rows and gives row rights precedence over fallback', async () => {
   const rows = await collect('jsonl', { input: 'https://example.org/data.jsonl', settings: { textField: 'body', license: 'CC0-1.0' }, http: { async *lines() { yield ''; yield JSON.stringify({ id: 1, body: 'A full source document', rights: { expression: 'MIT' }, score: 7 }); } } });
   assert.equal(rows[0].text, 'A full source document'); assert.equal(rows[0].rights.expression, 'MIT'); assert.equal(rows[0].metadata.original.score, 7);

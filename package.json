@@ -1,6 +1,6 @@
 {
   "name": "maine-source",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A local-first desktop workbench for building traceable text datasets",
   "license": "GPL-3.0-only",
   "author": "Maine-Source contributors",
@@ -17,7 +17,8 @@
     "notices": "node scripts/notices.mjs",
     "checksums": "node scripts/checksums.mjs",
     "predist": "node scripts/notices.mjs",
-    "postdist": "node scripts/checksums.mjs"
+    "postdist": "node scripts/checksums.mjs",
+    "soak": "node scripts/soak.mjs"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

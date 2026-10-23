@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — 2026-10-23 (alpha)
+
+- Repair Open Library public-access searches and ignore private archive files.
+- Retry bounded transient GET transport failures; cancellation still interrupts backoff.
+- Try alternate OpenAlex paper locations, prefer major public repositories, and retain the successful copy's URL and license.
+- Accept Crossref's unspecified-format full-text links without assuming they are PDFs.
+- Add an isolated packaged-runtime self-test, disposable Windows install/upgrade/uninstall CI, and a two-hour public-data replay soak with restart/outage injection.
+
 ## 0.2.0 — 2026-10-22 (alpha)
 
 - Resume interrupted/stopped/failed collections into the same dataset, reuse processed records, retry failed items, and retain supported page checkpoints. Recover committed records when run history lags behind a crash.
