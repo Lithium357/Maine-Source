@@ -2,11 +2,11 @@
 
 A Windows desktop workbench for collecting text and code into traceable ML datasets. Pick sources with checkboxes, define reusable recipes, and watch a customizable local dashboard.
 
-**Status: 0.1.5 alpha.** Underlying content is the default: papers, deposited files, linked articles, source code, and complete structured records are collected alongside provenance. Original files are saved separately from extracted text and included in portable exports. Metadata-only collection is an explicit recipe option. This is a local Windows application with no hosted collection backend.
+**Status: 0.2.0 alpha.** Underlying content is the default: papers, deposited files, linked articles, source code, and complete structured records are collected alongside provenance. Original files are saved separately from extracted text and included in portable exports. Metadata-only collection is an explicit recipe option. This is a local Windows application with no hosted collection backend.
 
 ## Run or install
 
-Run `Maine Source Setup 0.1.5.exe` from the build's `release/` folder to install for your Windows user. This alpha installer is unsigned; public distribution still needs a signing certificate and release verification. An unpacked app is also generated in `release/win-unpacked/`.
+Run `Maine Source Setup 0.2.0.exe` from the build's `release/` folder to install for your Windows user. This alpha installer is unsigned; public distribution still needs a signing certificate and release verification. An unpacked app is also generated in `release/win-unpacked/`.
 
 For development, install Node.js 24 and pnpm 11, then:
 
@@ -65,7 +65,7 @@ The home dashboard includes activity history, source mix, recent jobs, filter ou
 | HTTPS JSONL / gzip | Incrementally streamed rows from public file/shard URLs | None | Row declarations take precedence over optional user-supplied fallback |
 | Local files | JSONL, text, Markdown, source code | None | User-supplied JSONL rights preserved; other files unknown |
 
-Project Gutenberg and Common Crawl remain disabled roadmap entries. PDF extraction, HTML article extraction, and bounded ZIP/tar/gzip text extraction are implemented. OCR, arbitrary site crawling, automatic updates, Parquet/WARC reading, recursive GitHub tree recovery, and resumable downloads are not. Sources end naturally when exhausted.
+Project Gutenberg and Common Crawl remain disabled roadmap entries. PDF extraction, HTML article extraction, and bounded ZIP/tar/gzip text extraction are implemented. OCR, arbitrary site crawling, automatic updates, Parquet/WARC reading, and byte-range download resumption are not. Collection resume and large GitHub tree traversal are implemented. Sources end naturally when exhausted.
 
 See the [source expansion research](docs/source-research-2026-10-22.md) for further large corpora and specialist collections. The table above describes implemented coverage; research recommendations may require capabilities beyond the current connector.
 
@@ -79,7 +79,11 @@ See the [source expansion research](docs/source-research-2026-10-22.md) for furt
 
 Live checks on 2026-10-22 retrieved underlying files/content through arXiv, CKAN, Dataverse, Zenodo, RSS, Europe PMC, GitHub, and Wikidata. The arXiv end-to-end check saved the 15-page PDF and submitted source archive for `1706.03762v7`, extracted 130,377 characters across paper and source, found eleven LaTeX-related members, and verified exported original-file hashes. These are small integration samples, not completeness benchmarks. Use `node scripts/smoke-content.mjs` for the paper storage/export check or `pnpm smoke -- --full arxiv` for retrieval. Ordinary `pnpm smoke` checks discovery/metadata without following content links.
 
-Version 0.1.5 passes 128 automated tests, including full-text keyword matching, original-file budget accounting, portable exports, partial failures, and cancellation of isolated extraction subprocesses. The 0.1.4 packaged GUI collected the complete arXiv test paper with both originals, 130,377 extracted characters, zero errors, and the exact one-record stop. The inspector displayed both original-file controls and downloaded status. The 0.1.5 GUI saved UTF-32 preferences and exported that existing paper as UTF-32 plain text (521,788 bytes) and actual LaTeX source (10 `.tex` members), preserving both original-file hashes. Earlier GUI checks verified CISA on 0.1.2 and USGS on 0.1.3. See [content coverage](docs/content-coverage.md) for the source audit and exact behavior.
+Version 0.2.0 passes 141 automated tests, including full-text keyword matching, original-file budget accounting, portable exports, partial failures, and cancellation of isolated extraction subprocesses. The 0.1.4 packaged GUI collected the complete arXiv test paper with both originals, 130,377 extracted characters, zero errors, and the exact one-record stop. The inspector displayed both original-file controls and downloaded status. The 0.1.5 GUI saved UTF-32 preferences and exported that existing paper as UTF-32 plain text (521,788 bytes) and actual LaTeX source (10 `.tex` members), preserving both original-file hashes. Earlier GUI checks verified CISA on 0.1.2 and USGS on 0.1.3. See [content coverage](docs/content-coverage.md) for the source audit and exact behavior.
+
+## Release preparation
+
+Storage can be copied to another drive from Settings; the previous folder is retained. Datasets now offers browsing/search/filtering across all records, full-text paging, original-file validation, Resume for unfinished runs, and confirmed Recycle Bin removal. Runtime dependency notices ship with the app, and builds generate SHA-256 checksums. See [release readiness and remaining external gates](docs/release-readiness.md) and [changelog](CHANGELOG.md). This is still an alpha, not a release-ready 1.0.
 
 ## License policies and evidence
 
@@ -113,7 +117,7 @@ Keyword filtering scans the **title and text**, using literal lines, Unicode nor
 - Each accepted record has JSON plus any original files under its run's `assets/` directory. Document limits count accepted records, not every physical attachment. Output byte limits include serialized record metadata and all saved original bytes. Manifests, preferences, and bounded logs are outside that budget.
 - Wall-clock time includes pauses, network requests, and rate-limit waits. There is one active collection at a time; sources are advanced in turn. An outstanding source request can delay another source until it returns or times out.
 - Transient HTTP failures and rate limits are retried with cancellable waits. Redirects are not followed with credentials. Response bodies and local text files have size limits.
-- Stopping or quitting cancels network waits. Saved runs remain inspectable; a run interrupted by an unexpected exit is marked interrupted after restart. Automatic continuation from a saved checkpoint is not implemented.
+- Stopping or quitting cancels network waits. Saved runs remain inspectable; a run interrupted by an unexpected exit is marked interrupted after restart. Use Resume in Datasets to continue an interrupted/stopped/failed run. Saved records and supported page checkpoints are reused; other sources replay discovery. Budgets include prior sessions, excluding time while the app is closed.
 - On startup the app creates `data/Maine-Source/` on the user’s actual Windows Desktop, including a redirected or OneDrive Desktop. Collected records and run history live under `datasets/`; the export dialog defaults to `exports/`. The settings screen opens this Desktop data folder. Older internal datasets are copied across on first use when no Desktop dataset folder exists, leaving the original copy untouched. Preferences and credentials remain in private per-user application storage. Keys are encrypted using Electron `safeStorage` when remembered, or held only in process memory for the session. They never enter recipes, dataset records, exports, or the preview adapter.
 - JSONL imports support `text` (or `content`), `title`, `url`, `version`, `attribution`, and `rights: { expression, basis, scope, url }`. Stronger evidence flags can be supplied but are user assertions, not independently validated facts.
 - Public HTTPS JSONL downloads stream UTF-8 or gzip without buffering the whole file. Transfer bytes and decompressed bytes are each capped by the per-file input budget (default 100 MB); a row is capped at 12 MB. Up to five anonymous HTTPS redirects are allowed for file/CDN downloads, while credentialed API requests still reject redirects. Input caps end with an explicit source error rather than pretending the file was exhausted. Downloads do not resume after interruption.

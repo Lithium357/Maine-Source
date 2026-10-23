@@ -5,9 +5,9 @@ export default {
   description: 'Download accessible dataset files, preserving original files, citations, identifiers, and version metadata.',
   input: 'Research search (optional)', docs: 'https://guides.dataverse.org/en/latest/api/search.html',
   fields: [{ id: 'portal', label: 'Dataverse repository URL', default: 'https://dataverse.harvard.edu' }],
-  async *collect({ input, settings = {}, http }) {
+  async *collect({ input, settings = {}, http, resume = {}, checkpoint = async () => {} }) {
     const portal = portalURL(settings.portal || 'https://dataverse.harvard.edu');
-    for (let start = 0;; start += 100) {
+    for (let start = Number.isSafeInteger(resume.start) && resume.start >= 0 ? resume.start : 0;; start += 100) {
       const page = await http.get(endpoint(`${portal}/api/search`, { q: input || '*', type: 'dataset', per_page: 100, start }), { interval: 1100 });
       if (page.status !== 'OK' || !Array.isArray(page.data?.items)) throw new Error('Dataverse search failed; check the repository URL');
       const items = page.data.items;
@@ -24,6 +24,7 @@ export default {
         if (!files.length) { yield { ...base, contentRequests: [{ error: 'No accessible dataset file listing was supplied' }] }; continue; }
         for (const file of files) yield { ...base, id: `${base.id}/file/${file.dataFile.id}`, title: `${item.name} / ${file.dataFile.filename}`, contentRequests: [file.restricted ? { filename: file.dataFile.filename, error: 'File is restricted; this public connector has no access' } : { url: `${portal}/api/access/datafile/${file.dataFile.id}?format=original`, filename: file.dataFile.filename, role: 'dataset file' }], metadata: { ...base.metadata, file: file.dataFile } };
       }
+      await checkpoint({ start: start + 100 });
       if (items.length < 100 || start + items.length >= page.data.total_count) break;
     }
   },

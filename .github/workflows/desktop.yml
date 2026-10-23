@@ -19,8 +19,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm test
+      - run: pnpm audit --prod --audit-level=high
       - run: pnpm dist
       - uses: actions/upload-artifact@v4
         with:
           name: maine-source-windows
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/SHA256SUMS.txt
+            THIRD-PARTY-NOTICES.txt

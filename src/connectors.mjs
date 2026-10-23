@@ -19,11 +19,11 @@ const declaration = (expression, evidence, scope = 'record', extra = {}) => ({ e
 const unknown = () => ({ expression: null, basis: 'unknown', scope: 'record' });
 const githubHeaders = key => ({ ...(key ? { Authorization: `Bearer ${key}` } : {}), 'X-GitHub-Api-Version': '2026-03-10' });
 
-async function* nvd({ input, key, http }) {
-  for (let start = 0;;) {
+async function* nvd({ input, key, http, resume = {}, checkpoint = async () => {} }) {
+  for (let start = Number.isSafeInteger(resume.start) && resume.start >= 0 ? resume.start : 0;;) {
     const page = await http.get(url('https://services.nvd.nist.gov/rest/json/cves/2.0', { resultsPerPage: 100, startIndex: start, keywordSearch: input || undefined }), { headers: key ? { apiKey: key } : {}, interval: key ? 650 : 6500 });
     for (const { cve } of page.vulnerabilities || []) yield { id: cve.id, title: cve.id, text: (cve.descriptions || []).filter(d => d.lang === 'en').map(d => d.value).join('\n'), url: `https://nvd.nist.gov/vuln/detail/${cve.id}`, version: cve.lastModified, rights: unknown(), attribution: cve.sourceIdentifier, metadata: { weaknesses: cve.weaknesses, references: cve.references, original: cve } };
-    start += page.vulnerabilities?.length || 0;
+    start += page.vulnerabilities?.length || 0; await checkpoint({ start });
     if (!page.vulnerabilities?.length || start >= page.totalResults) break;
   }
 }
@@ -62,7 +62,21 @@ async function* github({ input, key, http, settings = {} }) {
     const commit = await http.get(`${root}/commits/${encodeURIComponent(meta.default_branch)}`, { headers, interval: 1200 });
     const repoExpression = normalizeLicense(meta.license?.spdx_id);
     const tree = await http.get(`${root}/git/trees/${commit.sha}?recursive=1`, { headers, interval: 1200 });
-    if (tree.truncated) throw new Error(`${repo}: GitHub returned a truncated tree; choose a smaller repository`);
+    if (tree.truncated) {
+      // Fall back to the nonrecursive tree API; never silently omit large repositories.
+      tree.tree = []; const pending = [{ sha: commit.sha, prefix: '' }]; let visited = 0;
+      while (pending.length) {
+        if (++visited > 100000) throw new Error('GitHub tree traversal exceeded 100,000 directories');
+        const directory = pending.pop();
+        const page = await http.get(`${root}/git/trees/${directory.sha}`, { headers, interval: 1200 });
+        if (page.truncated) throw new Error('GitHub returned a truncated individual directory');
+        for (const entry of page.tree || []) {
+          const relative = directory.prefix + entry.path;
+          if (entry.type === 'tree') { if (!/(^|\/)(node_modules|vendor|dist|build|\.git)(\/|$)/.test(relative)) pending.push({ sha: entry.sha, prefix: relative + '/' }); }
+          else tree.tree.push({ ...entry, path: relative });
+        }
+      }
+    }
     for (const file of tree.tree || []) {
       if (file.type !== 'blob' || file.mode === '120000' || file.size > 1000000 || !extensions.some(ext => file.path.toLowerCase().endsWith(ext))) continue;
       if (/(^|\/)(node_modules|vendor|dist|build|\.git)(\/|$)/.test(file.path)) continue;

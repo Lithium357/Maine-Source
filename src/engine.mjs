@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, writeFile, rename, readFile, readdir, open, copyFile, unlink } from 'node:fs/promises';
+import { mkdir, writeFile, rename, readFile, readdir, open, copyFile, unlink, appendFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
@@ -9,9 +9,11 @@ import { createInterface } from 'node:readline';
 import { connectors } from './connectors.mjs';
 import { sources } from './catalog.mjs';
 import { evaluate } from './policy.mjs';
-import { HttpClient } from './http.mjs';
+import { HttpClient, redactSecrets } from './http.mjs';
 import { materialize } from './content.mjs';
 import { defaultTextOutput, validateTextOutput } from './output-options.mjs';
+import { ensureFreeSpace } from './storage.mjs';
+import { jobFolder, recordFiles, readRecord } from './datasets.mjs';
 import { attachmentPath, renderText, transformText, encodeText } from './text-output.mjs';
 
 export function validateRecipe(recipe) {
@@ -36,42 +38,83 @@ export function validateRecipe(recipe) {
 export async function atomicJSON(file, value) {
   await mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.${randomUUID()}.tmp`;
-  await writeFile(temp, JSON.stringify(value, null, 2), { mode: 0o600 });
-  await rename(temp, file);
+  try { await writeFile(temp, JSON.stringify(value, null, 2), { mode: 0o600 }); await rename(temp, file); }
+  catch (error) { await unlink(temp).catch(() => {}); throw error; }
 }
 export class Collector {
-  constructor({ root, onChange = () => {}, getKey = () => '', adapters = connectors, fetcher = fetch, localPaths = [] }) {
-    Object.assign(this, { root, onChange, getKey, adapters, fetcher, localPaths });
+  constructor({ root, onChange = () => {}, getKey = () => '', adapters = connectors, fetcher = fetch, localPaths = [], checkSpace = ensureFreeSpace }) {
+    Object.assign(this, { root, onChange, getKey, adapters, fetcher, localPaths, checkSpace });
     this.jobs = []; this.active = null; this.pendingSave = Promise.resolve();
   }
   async init() {
     await mkdir(this.root, { recursive: true });
-    try { this.jobs = JSON.parse(await readFile(path.join(this.root, 'jobs.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    for (const job of this.jobs) if (['running', 'paused', 'stopping'].includes(job.status)) { job.status = 'interrupted'; job.reason = 'App closed before this run finished. Start a new run from its recipe.'; job.endedAt = new Date().toISOString(); }
+    try { this.jobs = JSON.parse(await readFile(path.join(this.root, 'jobs.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') { try { this.jobs = JSON.parse(await readFile(path.join(this.root, 'jobs.json.bak'), 'utf8')); } catch { throw new Error('Run history is damaged. Restore jobs.json or jobs.json.bak from backup; existing dataset files have been preserved.'); } } }
+    if (!Array.isArray(this.jobs)) throw new Error('Invalid run history');
+    for (const job of this.jobs) if (['running', 'paused', 'stopping'].includes(job.status)) { job.status = 'interrupted'; job.reason = 'App closed before this run finished. Resume to continue using saved records.'; job.endedAt = new Date().toISOString(); }
     await this.save();
   }
   save() {
+    if (this.active?.sessionStarted) this.active.job.elapsedMs = this.active.elapsedBefore + Date.now() - this.active.sessionStarted;
     const snapshot = structuredClone(this.jobs);
-    this.pendingSave = this.pendingSave.catch(() => {}).then(() => atomicJSON(path.join(this.root, 'jobs.json'), snapshot));
+    this.pendingSave = this.pendingSave.catch(() => {}).then(async () => { await atomicJSON(path.join(this.root, 'jobs.json.bak'), snapshot); await atomicJSON(path.join(this.root, 'jobs.json'), snapshot); });
     return this.pendingSave;
   }
   emit() { this.onChange(); }
   log(job, kind, message, source) {
+    message = redactSecrets(message, job.recipe.sourceIds.map(id => this.getKey(id)));
     job.events.push({ time: new Date().toISOString(), kind, message, source });
     if (job.events.length > 160) job.events.shift();
     this.emit();
   }
-  async start(input) {
+  async begin(fn) {
+    if (this.active || this.starting) throw new Error('A collection is already active. Stop it before starting another.');
+    this.starting = true; try { return await fn(); } finally { this.starting = false; }
+  }
+  start(input) { return this.begin(() => this.startNew(input)); }
+  resume(id, limits) { return this.begin(() => this.resumeSaved(id, limits)); }
+  async startNew(input) {
     if (this.active) throw new Error('A collection is already active. Stop it before starting another.');
     const recipe = validateRecipe(input);
+    await this.checkSpace(this.root);
     const job = { id: randomUUID(), name: recipe.name, recipe, status: 'running', startedAt: new Date().toISOString(), accepted: 0, rejected: 0, bytes: 0, seen: 0, errors: 0, counts: {}, licenses: {}, outcomes: {}, samples: [], events: [], activity: [], reason: '' };
-    const active = { job, controller: new AbortController(), paused: false, paths: [...this.localPaths] };
+    const active = { job, controller: new AbortController(), paused: false, paths: [...this.localPaths], elapsedBefore: 0, sessionStarted: Date.now() };
     this.active = active; this.jobs.unshift(job);
     try { await mkdir(path.join(this.root, job.id, 'records'), { recursive: true }); await this.save(); }
     catch (error) { this.active = null; this.jobs = this.jobs.filter(j => j.id !== job.id); throw error; }
     this.emit();
-    this.running = this.run(active).catch(error => { job.status = 'failed'; job.reason = `Could not save collection state: ${error.message}`; this.active = null; this.emit(); });
+    this.running = this.run(active).catch(async error => { job.status = 'failed'; job.reason = `Could not save collection state: ${error.message}`; this.active = null; this.emit(); await this.save().catch(() => {}); });
     return job.id;
+  }
+  async resumeSaved(id, limits) {
+    if (this.active) throw new Error('A collection is already active');
+    const job = this.jobs.find(j => j.id === id);
+    if (!job || !['interrupted', 'stopped', 'failed', 'completed_with_errors'].includes(job.status)) throw new Error('This run cannot be resumed');
+    const recipe = validateRecipe({ ...job.recipe, ...(limits ? { limits } : {}) });
+    if (recipe.sourceIds.includes('local') && !this.localPaths.length) throw new Error('Reselect the original local files in Settings before resuming');
+    const root = jobFolder(this.root, id), saved = [];
+    // Committed record files are authoritative if the app crashed before jobs.json was saved.
+    const files = await recordFiles(root);
+    if (files.some((file, i) => Number(file.slice(0, 8)) !== i + 1)) throw new Error('Dataset record sequence is damaged; restore missing records before resuming');
+    job.accepted = files.length; job.bytes = 0; job.counts = {}; job.licenses = {};
+    for (const file of files) {
+      const record = await readRecord(root, file);
+      saved.push({ record: { hash: record.hash, recoveryKey: record.recoveryKey } });
+      job.bytes += (await stat(path.join(root, 'records', file))).size;
+      for (const attachment of record.attachments || []) {
+        const filename = attachmentPath(root, attachment.path);
+        if ((await stat(filename)).size !== attachment.bytes) throw new Error('Saved original is missing or damaged; validate the dataset before resuming');
+        job.bytes += attachment.bytes;
+      }
+      job.counts[record.source] = (job.counts[record.source] || 0) + 1;
+      const license = record.rights?.expression || 'Unknown'; job.licenses[license] = (job.licenses[license] || 0) + 1;
+    }
+    if (recipe.limits.files > 0 && job.accepted >= recipe.limits.files || recipe.limits.megabytes > 0 && job.bytes >= recipe.limits.megabytes * 1048576 || recipe.limits.minutes > 0 && (job.elapsedMs || 0) >= recipe.limits.minutes * 60000) throw new Error('This run reached its limit. Increase the total budget to continue.');
+    await this.checkSpace(this.root);
+    job.recipe = recipe; job.reason = ''; job.status = 'running'; job.priorErrors = (job.priorErrors || 0) + job.errors; job.errors = 0; delete job.endedAt;
+    const active = { job, controller: new AbortController(), paused: false, paths: [...this.localPaths], elapsedBefore: job.elapsedMs || 0, sessionStarted: Date.now(), saved };
+    this.active = active; try { await this.save(); } catch (error) { job.status = 'interrupted'; this.active = null; throw error; } this.emit();
+    this.running = this.run(active).catch(async error => { job.status = 'failed'; job.reason = `Could not save collection state: ${error.message}`; this.active = null; this.emit(); await this.save().catch(() => {}); });
+    return id;
   }
   async *localFiles(paths) {
     if (!paths.length) throw new Error('Choose local files in Sources before starting a local import');
@@ -99,7 +142,7 @@ export class Collector {
   }
   async run(active) {
     const { job, controller } = active; const recipe = job.recipe;
-    const deadline = Number(recipe.limits.minutes) > 0 ? Date.now() + Number(recipe.limits.minutes) * 60000 : Infinity;
+    const deadline = Number(recipe.limits.minutes) > 0 ? Date.now() + Math.max(0, Number(recipe.limits.minutes) * 60000 - (job.elapsedMs || 0)) : Infinity;
     let timer;
     if (Number.isFinite(deadline)) {
       const checkDeadline = () => {
@@ -108,9 +151,15 @@ export class Collector {
       };
       checkDeadline();
     }
-    const seen = new Set();
+    const seen = new Set((active.saved || []).map(item => item.record.hash));
+    const completed = new Set((active.saved || []).map(item => item.record.recoveryKey).filter(Boolean));
+    const recoveryRoot = jobFolder(this.root, job.id), journal = path.join(recoveryRoot, 'processed.jsonl');
+    try { const lines = createInterface({ input: createReadStream(journal), crlfDelay: Infinity }); for await (const line of lines) if (/^[a-f0-9]{64}$/.test(line)) completed.add(line); } catch (e) { if (e.code !== 'ENOENT') { clearTimeout(timer); throw e; } }
+    const processed = async key => { await appendFile(journal, key + '\n', { mode: 0o600 }); };
+    const failedSources = new Set();
+    job.checkpoints ||= {};
     const iterators = recipe.sourceIds.map(source => {
-      const context = { input: recipe.inputs?.[source] || '', settings: { ...recipe.settings?.[source], ...recipe.contentLimits, contentMode: recipe.contentMode || 'full' }, key: this.getKey(source), http: new HttpClient({ signal: controller.signal, fetcher: this.fetcher, log: (kind, message) => this.log(job, kind, message, source) }) };
+      const context = { resume: job.checkpoints[source] || {}, checkpoint: async value => { if (!failedSources.has(source)) { job.checkpoints[source] = value; await this.save(); } }, input: recipe.inputs?.[source] || '', settings: { ...recipe.settings?.[source], ...recipe.contentLimits, contentMode: recipe.contentMode || 'full' }, key: this.getKey(source), http: new HttpClient({ signal: controller.signal, fetcher: this.fetcher, log: (kind, message) => this.log(job, kind, message, source) }) };
       return { source, context, iterator: source === 'local' ? this.localFiles(active.paths) : this.adapters[source](context) };
     });
     try {
@@ -129,11 +178,13 @@ export class Collector {
           if (next.done) { this.log(job, 'info', 'Source exhausted', source); iterators.splice(i, 1); continue; }
           i++;
           if (controller.signal.aborted || Date.now() >= deadline) { job.reason ||= 'Wall-clock time limit reached'; break; }
+          const recoveryKey = createHash('sha256').update(JSON.stringify([source, next.value.id, next.value.version, next.value.url, next.value.text])).digest('hex');
+          if (completed.has(recoveryKey)) continue;
           let raw;
           try { raw = await materialize(next.value, context.http, context.settings); }
           catch (error) {
             if (controller.signal.aborted) break;
-            job.errors++; this.log(job, 'error', `${next.value.title || next.value.id}: ${error.message}`.replace(/(api_key|apiKey|token|key)=[^&\s]+/gi, '$1=[redacted]'), source); continue;
+            failedSources.add(source); job.errors++; this.log(job, 'error', `${next.value.title || next.value.id}: ${error.message}`.replace(/(api_key|apiKey|token|key)=[^&\s]+/gi, '$1=[redacted]'), source); continue;
           }
           const { attachments: incoming = [], ...fields } = raw;
           const sequence = String(job.accepted + 1).padStart(8, '0');
@@ -143,7 +194,7 @@ export class Collector {
             const { data: ignored, ...details } = file;
             return { data, details: { ...details, filename, path: `assets/${sequence}/${filename}`, bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') } };
           });
-          const record = { schema: 'maine-source.record.v1', ...fields, source, text: String(raw.text || ''), collectedAt: new Date().toISOString(), ...(payloads.length ? { attachments: payloads.map(p => p.details) } : {}) };
+          const record = { schema: 'maine-source.record.v1', ...fields, source, recoveryKey, text: String(raw.text || ''), collectedAt: new Date().toISOString(), ...(payloads.length ? { attachments: payloads.map(p => p.details) } : {}) };
           const fingerprint = record.text.trim() ? record.text.normalize('NFKC').replace(/\s+/g, ' ').trim() : payloads.map(p => p.details.sha256).join(':');
           record.hash = createHash('sha256').update(fingerprint).digest('hex');
           const binaryOnly = payloads.length && !record.text.trim();
@@ -152,13 +203,17 @@ export class Collector {
           if (!result.accepted) {
             job.rejected++; job.outcomes[result.kind] = (job.outcomes[result.kind] || 0) + 1;
             this.log(job, 'filtered', `${raw.title || raw.id}: ${result.reason}`, source);
-            continue;
+            await processed(recoveryKey); await this.save(); continue;
           }
           record.policy = { strictness: recipe.strictness, mode: recipe.licenseMode, decision: result.reason, warning: [result.warning, binaryOnly ? 'No text could be extracted. Original files retained; keyword filtering could examine the title only.' : null].filter(Boolean).join(' ') || null };
           const serialized = JSON.stringify(record) + '\n';
           const bytes = Buffer.byteLength(serialized) + payloads.reduce((sum, p) => sum + p.data.length, 0);
           if (Number(recipe.limits.megabytes) > 0 && job.bytes + bytes > recipe.limits.megabytes * 1024 * 1024) { job.reason = 'Storage limit reached; next record would exceed budget'; controller.abort(); break; }
           if (controller.signal.aborted || Date.now() >= deadline) { job.reason ||= 'Wall-clock time limit reached'; break; }
+          await this.checkSpace(this.root, bytes);
+          // Only the next, uncommitted record may have leftovers from an interrupted write.
+          await rm(path.join(recoveryRoot, 'assets', sequence), { recursive: true, force: true });
+          await unlink(path.join(recoveryRoot, 'records', `${sequence}.json.tmp`)).catch(e => { if (e.code !== 'ENOENT') throw e; });
           for (const payload of payloads) {
             const assetPath = path.join(this.root, job.id, payload.details.path);
             await mkdir(path.dirname(assetPath), { recursive: true });
@@ -176,17 +231,18 @@ export class Collector {
           if (job.activity.at(-1)?.bucket === bucket) job.activity.at(-1).count++; else job.activity.push({ bucket, count: 1 });
           job.samples.unshift({ title: record.title, source, license: result.license, preview: record.text.slice(0, 400), url: record.url, attachments: record.attachments, contentStatus: record.metadata?.contentStatus, contentFailures: record.metadata?.contentFailures }); job.samples = job.samples.slice(0, 12);
           this.log(job, 'accepted', `Accepted ${raw.title || raw.id}`, source);
-          await this.save();
+          await processed(recoveryKey); await this.save();
           if (Number(recipe.limits.files) > 0 && job.accepted >= recipe.limits.files) { job.reason = 'Document count limit reached'; controller.abort(); break; }
         }
       }
       job.reason ||= controller.signal.aborted ? 'Stopped by user' : 'All selected sources exhausted';
       job.status = job.errors ? 'completed_with_errors' : 'completed';
       if (job.reason === 'Stopped by user') job.status = 'stopped';
-    } catch (e) { job.status = controller.signal.aborted ? 'stopped' : 'failed'; job.reason ||= controller.signal.aborted ? 'Stopped by user' : e.message; }
+    } catch (e) { job.status = controller.signal.aborted ? 'stopped' : 'failed'; job.reason ||= controller.signal.aborted ? 'Stopped by user' : redactSecrets(e.message, recipe.sourceIds.map(id => this.getKey(id))); }
     finally {
       clearTimeout(timer);
       for (const { iterator } of iterators) await iterator.return?.().catch(() => {});
+      job.elapsedMs = active.elapsedBefore + Date.now() - active.sessionStarted;
       job.endedAt = new Date().toISOString(); this.active = null;
       await atomicJSON(path.join(this.root, job.id, 'manifest.json'), { ...job, samples: undefined, events: undefined });
       await this.save(); this.emit();
@@ -222,6 +278,7 @@ export class Collector {
       }
       if (!exportedRecords && !structured && settings.representation === 'latex') throw new Error('No original LaTeX .tex source is available in this dataset; PDF text is not converted into invented LaTeX');
     };
+    await this.checkSpace(path.dirname(destination), (job.bytes || 0) * 5);
     const temp = `${destination}.${randomUUID()}.tmp`;
     try {
       await pipeline(Readable.from(chunks()), ...(compressed ? [createGzip()] : []), createWriteStream(temp, { flags: 'wx', mode: 0o600 }));

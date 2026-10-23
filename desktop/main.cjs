@@ -3,7 +3,8 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 
-let window, collector, state, catalog, policy, atomicJSON, storage, output;
+let window, collector, state, catalog, policy, atomicJSON, storage, output, engine, datasets, storageTools;
+let workspaceBusy = false;
 let keys = {}, storedKeys = {}, localPaths = [], closing = false;
 const uiFile = path.join(__dirname, '..', 'ui', 'index.html');
 const statePath = () => path.join(app.getPath('userData'), 'preferences.json');
@@ -12,20 +13,27 @@ const respond = fn => async (event, ...args) => {
   if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== pathToFileURL(uiFile).href) throw new Error('Untrusted IPC sender');
   try { return { ok: true, value: await fn(...args) }; } catch (error) { return { ok: false, error: error.message || 'Operation failed' }; }
 };
-const snapshot = () => ({ ...state, jobs: collector.jobs, sourceCatalog: catalog.sources, presets: catalog.presets, widgetCatalog: catalog.widgets, licenseIds: policy.licenseIds, licenseLevels: policy.levels, credentialStatus: Object.fromEntries(catalog.sources.filter(s => s.key).map(s => [s.id, Boolean(keys[s.id])])), secureStorage: safeStorage.isEncryptionAvailable(), localFiles: localPaths.map(p => path.basename(p)), dataPath: storage.data, version: app.getVersion() });
+const snapshot = () => ({ ...state, jobs: collector.jobs, sourceCatalog: catalog.sources, presets: catalog.presets, widgetCatalog: catalog.widgets, licenseIds: policy.licenseIds, licenseLevels: policy.levels, credentialStatus: Object.fromEntries(catalog.sources.filter(s => s.key).map(s => [s.id, Boolean(keys[s.id])])), secureStorage: safeStorage.isEncryptionAvailable(), localFiles: localPaths.map(p => path.basename(p)), dataPath: storage.data, workspaceBusy, version: app.getVersion() });
 const emit = () => { if (window && !window.isDestroyed()) window.webContents.send('state:changed', snapshot()); };
 const save = () => atomicJSON(statePath(), state);
+async function workspaceOperation(fn) {
+  if (workspaceBusy || collector?.starting) throw new Error('Wait for the current workspace operation to finish');
+  workspaceBusy = true; emit();
+  try { return await fn(); } finally { workspaceBusy = false; emit(); }
+}
 
-app.whenReady().then(async () => {
-  const engine = await import('../src/engine.mjs');
+if (!app.requestSingleInstanceLock()) app.quit();
+else app.whenReady().then(async () => {
+  engine = await import('../src/engine.mjs');
+  datasets = await import('../src/datasets.mjs');
+  storageTools = await import('../src/storage.mjs');
   catalog = await import('../src/catalog.mjs');
   policy = await import('../src/policy.mjs');
   output = await import('../src/output-options.mjs');
   atomicJSON = engine.atomicJSON;
-  const { prepareStorage } = await import('../src/storage.mjs');
-  storage = await prepareStorage({ desktop: app.getPath('desktop'), userData: app.getPath('userData') });
   state = { selectedSources: [], recipes: [], dashboard: catalog.widgets.map(w => w.id), onboardingDone: false };
   try { state = { ...state, ...JSON.parse(await fs.readFile(statePath(), 'utf8')) }; } catch (e) { if (e.code !== 'ENOENT') await dialog.showMessageBox({ type: 'warning', message: 'Preferences could not be loaded. Defaults will be used.' }); }
+  storage = await storageTools.prepareStorage({ desktop: app.getPath('desktop'), userData: app.getPath('userData'), dataDirectory: state.dataDirectory });
   try { storedKeys = JSON.parse(await fs.readFile(vaultPath(), 'utf8')); } catch {}
   try { state.textOutput = output.validateTextOutput(state.textOutput); } catch { state.textOutput = output.defaultTextOutput(); }
   if (safeStorage.isEncryptionAvailable()) for (const [id, encrypted] of Object.entries(storedKeys)) { try { keys[id] = safeStorage.decryptString(Buffer.from(encrypted, 'base64')); } catch {} }
@@ -66,23 +74,48 @@ app.whenReady().then(async () => {
     const choice = await dialog.showOpenDialog(window, { title: 'Choose text, code, or JSONL files', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Text and code', extensions: ['jsonl', 'txt', 'md', 'py', 'js', 'ts', 'tsx', 'rs', 'go', 'c', 'cpp', 'h', 'java', 'html', 'xml', 'csv'] }, { name: 'All files', extensions: ['*'] }] });
     if (!choice.canceled) { localPaths = choice.filePaths; collector.localPaths = localPaths; emit(); }
   }));
-  ipcMain.handle('job:start', respond(recipe => collector.start(recipe)));
+  ipcMain.handle('job:start', respond(recipe => { if (workspaceBusy) throw new Error('Wait for the current workspace operation'); return collector.start(recipe); }));
+  ipcMain.handle('job:resume', respond(({ id, limits }) => { if (workspaceBusy) throw new Error('Wait for the current workspace operation'); return collector.resume(id, limits); }));
   ipcMain.handle('job:pause', respond(() => collector.pause()));
   ipcMain.handle('job:stop', respond(() => collector.stop()));
-  ipcMain.handle('dataset:export', respond(async ({ id, format }) => {
+  ipcMain.handle('dataset:export', respond(async ({ id, format }) => workspaceOperation(async () => {
     const job = collector.jobs.find(j => j.id === id); if (!job) throw new Error('Dataset not found');
     const extension = format === 'text' ? output.textExportExtension(state.textOutput) : 'jsonl';
     const choice = await dialog.showSaveDialog(window, { title: 'Export dataset', defaultPath: path.join(storage.exports, `${job.name.replace(/[^\w-]+/g, '-')}.${extension}`), filters: [{ name: format === 'text' ? 'Configured text output' : 'JSON Lines', extensions: [extension.split('.').at(-1)] }] });
     if (!choice.canceled) { await collector.exportTo(id, choice.filePath, format, state.textOutput); return 'Dataset, original files, and companion manifest exported.'; }
     return 'Export canceled.';
-  }));
+  })));
+  const folder = async id => { if (!collector.jobs.some(j => j.id === id)) throw new Error('Dataset not found'); datasets.jobFolder(storage.datasets, id); return datasets.containedFile(storage.datasets, id); };
+  ipcMain.handle('dataset:browse', respond(async ({ id, ...options }) => datasets.browseRecords(await folder(id), options)));
+  ipcMain.handle('dataset:record', respond(async ({ id, file, offset }) => datasets.recordDetail(await folder(id), file, offset)));
+  ipcMain.handle('dataset:validate', respond(({ id }) => workspaceOperation(async () => datasets.validateDataset(await folder(id)))));
+  ipcMain.handle('dataset:delete', respond(({ id }) => workspaceOperation(async () => {
+    if (collector.active) throw new Error('Stop collection before deleting a dataset');
+    const target = await folder(id), job = collector.jobs.find(j => j.id === id);
+    if ((await fs.lstat(target)).isSymbolicLink()) throw new Error('Cannot delete a linked dataset folder');
+    const choice = await dialog.showMessageBox(window, { type: 'warning', title: 'Move dataset to Recycle Bin?', message: `Move “${job.name}” and its original files to the Recycle Bin?`, detail: 'Existing exports are kept. This removes the collection from the app.', buttons: ['Cancel', 'Move to Recycle Bin'], defaultId: 0, cancelId: 0, noLink: true });
+    if (choice.response !== 1) return false;
+    await shell.trashItem(target); collector.jobs = collector.jobs.filter(j => j.id !== id); await collector.save(); emit(); return true;
+  })));
+  ipcMain.handle('storage:space', respond(async () => storageTools.ensureFreeSpace(storage.data, 0, 0)));
+  ipcMain.handle('storage:choose', respond(() => workspaceOperation(async () => {
+    if (collector.active) throw new Error('Stop collection before moving storage');
+    const choice = await dialog.showOpenDialog(window, { title: 'Choose a parent folder for Maine-Source data', properties: ['openDirectory', 'createDirectory'] });
+    if (choice.canceled) return 'Storage unchanged.';
+    await collector.pendingSave;
+    const next = await storageTools.relocateStorage(storage, choice.filePaths[0]);
+    const previous = state.dataDirectory; state.dataDirectory = next.data;
+    try { await save(); } catch (error) { state.dataDirectory = previous; throw error; }
+    storage = next; collector.root = storage.datasets; emit();
+    return 'Storage copied and switched. The previous folder is kept as a backup.';
+  })));
   ipcMain.handle('link:open', respond(async address => {
     const url = new URL(address); if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Only HTTPS links may be opened');
     await shell.openExternal(url.href);
   }));
   ipcMain.handle('attachment:show', respond(async ({ id, relative }) => {
     if (!collector.jobs.some(job => job.id === id) || typeof relative !== 'string' || !/^assets\/[0-9]{8}\/[a-zA-Z0-9._-]+$/.test(relative)) throw new Error('Invalid original-file reference');
-    const file = path.join(storage.datasets, id, relative);
+    const file = await datasets.containedFile(await folder(id), relative);
     await fs.access(file);
     shell.showItemInFolder(file); // Reveal only; never execute downloaded files.
   }));
@@ -91,7 +124,8 @@ app.whenReady().then(async () => {
   window.on('close', async event => {
     if (closing) return;
     event.preventDefault(); closing = true; collector.stop();
-    try { await collector.running; await collector.pendingSave; } finally { window.destroy(); app.quit(); }
+    try { while (workspaceBusy) await new Promise(resolve => setTimeout(resolve, 100)); await collector.running; await collector.pendingSave; } finally { window.destroy(); app.quit(); }
   });
 }).catch(async error => { await dialog.showMessageBox({ type: 'error', title: 'Maine Source could not start', message: error.message }); app.quit(); });
+app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });
 app.on('window-all-closed', () => app.quit());

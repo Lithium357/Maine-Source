@@ -12,9 +12,9 @@ export default {
   description: 'Download available open-access paper PDFs, with research metadata, abstracts, and citation provenance.',
   key: 'Optional OpenAlex API key (API budget applies)', input: 'Research topic', docs: 'https://help.openalex.org/api/',
   fields: [{ id: 'contentAccess', label: 'Full-text access', options: ['Public publisher PDF', 'OpenAlex content API (metered; key required)'] }],
-  async *collect({ input, key, http, settings = {} }) {
+  async *collect({ input, key, http, settings = {}, resume = {}, checkpoint = async () => {} }) {
     if (!input) throw new Error('OpenAlex needs a research topic');
-    let cursor = '*'; const cursors = new Set();
+    let cursor = resume.cursor || '*'; const cursors = new Set();
     while (cursor) {
       const page = await http.get(endpoint('https://api.openalex.org/works', { search: input, filter: settings.contentMode === 'metadata' ? 'has_abstract:true' : 'is_oa:true', per_page: 100, cursor, api_key: key || undefined }), { interval: 1100 });
       if (!Array.isArray(page.results)) throw new Error('OpenAlex returned an invalid results page');
@@ -29,7 +29,7 @@ export default {
       if (!page.results.length || !page.meta?.next_cursor) break;
       const next = page.meta.next_cursor;
       if (cursors.has(next)) throw new Error('OpenAlex repeated its cursor');
-      cursors.add(next); cursor = next;
+      cursors.add(next); cursor = next; await checkpoint({ cursor });
     }
   },
 };

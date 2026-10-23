@@ -110,3 +110,9 @@ pnpm smoke -- yoursource
 The smoke command only recognizes entries explicitly added to its case list. It reads no saved credentials and returns a nonzero exit code if a selected source fails. Authenticated integration checks require a separate explicitly configured test; do not add secrets to the smoke script.
 
 For huge corpora, do not label a partial viewer or search window a complete snapshot. Current JSONL support streams files but does not resume interrupted downloads, read Parquet/WARC, or implement cross-run deduplication. Those need shared engine work before a connector advertises them.
+
+## Collection resume
+
+Collectors receive optional `resume` (the last saved source checkpoint) and async `checkpoint(value)`. Start discovery at that cursor/offset. Call `await checkpoint({ cursor: nextCursor })` only after every item in the current page has been yielded, never before yielding its records. The engine refuses to advance a source checkpoint after a materialization failure in that session, so a retry can revisit the failed page. Do not store credentials or credential-bearing URLs in a checkpoint.
+
+The engine separately journals processed record identities and reconstructs deduplication from saved records. Sources without cursor support replay discovery; the engine skips processed candidates before materialization. Some collectors fetch content as part of discovery, so this is not a guarantee of zero repeated requests. Failed whole-record downloads are retried; missing components of an already accepted partial record are reported but are not patched automatically. Old datasets without recovery identities may repeat content downloads once when resumed.

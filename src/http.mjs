@@ -2,6 +2,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Readable } from 'node:stream';
 import { createGunzip } from 'node:zlib';
 
+export function redactSecrets(value, secrets = []) {
+  let text = String(value || '').replace(/(api[_-]?key|token|access_token|secret|authorization)=([^&\s]+)/gi, '$1=[redacted]').replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [redacted]');
+  for (const secret of secrets) if (typeof secret === 'string' && secret.length >= 4) { text = text.split(secret).join('[redacted]'); text = text.split(encodeURIComponent(secret)).join('[redacted]'); }
+  return text;
+}
 export class HttpClient {
   constructor({ signal, log = () => {}, fetcher = fetch, clock = Date.now, sleep = delay } = {}) {
     Object.assign(this, { signal, log, fetcher, clock, sleep });

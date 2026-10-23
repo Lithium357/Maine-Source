@@ -1,14 +1,15 @@
 import path from 'node:path';
-import { mkdir, stat, cp, rename } from 'node:fs/promises';
+import { mkdir, stat, cp, rename, statfs, readdir, realpath } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
 async function exists(directory) {
   try { await stat(directory); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
-export function storagePaths({ desktop, userData }) {
+export function storagePaths({ desktop, userData, dataDirectory }) {
   if (!path.isAbsolute(desktop) || !path.isAbsolute(userData)) throw new Error('Desktop and application storage paths must be absolute');
-  const data = path.join(desktop, 'data', 'Maine-Source');
+  if (dataDirectory && !path.isAbsolute(dataDirectory)) throw new Error('Data directory must be absolute');
+  const data = dataDirectory || path.join(desktop, 'data', 'Maine-Source');
   return { data, datasets: path.join(data, 'datasets'), exports: path.join(data, 'exports'), legacyDatasets: path.join(userData, 'datasets') };
 }
 
@@ -25,4 +26,25 @@ export async function prepareStorage(locations) {
   await mkdir(paths.datasets, { recursive: true });
   await mkdir(paths.exports, { recursive: true });
   return paths;
+}
+
+export async function ensureFreeSpace(directory, required = 0, reserve = 64 * 1024 * 1024) {
+  const info = await statfs(directory, { bigint: true });
+  const available = info.bavail * info.bsize;
+  if (available < BigInt(Math.ceil(required + reserve))) throw new Error('Not enough free disk space. Free space or move storage in Settings, then resume the collection.');
+  return Number(available);
+}
+export async function relocateStorage(paths, parent) {
+  if (!path.isAbsolute(parent)) throw new Error('Choose an absolute storage folder');
+  const source = await realpath(paths.data), destination = path.join(await realpath(parent), 'Maine-Source');
+  const relation = path.relative(source, destination);
+  if (!relation || !relation.startsWith('..') && !path.isAbsolute(relation)) throw new Error('Choose a folder outside the current data folder');
+  if (await exists(destination)) throw new Error('The destination already contains a Maine-Source folder. Choose an empty location to avoid overwriting data.');
+  let bytes = 0;
+  async function count(directory) { for (const entry of await readdir(directory, { withFileTypes: true })) { if (entry.isSymbolicLink()) throw new Error('Storage contains a symbolic link; relocation stopped'); const file = path.join(directory, entry.name); if (entry.isDirectory()) await count(file); else bytes += (await stat(file)).size; } }
+  await count(source); await ensureFreeSpace(parent, bytes);
+  const staging = path.join(parent, `.maine-source-move-${randomUUID()}`);
+  await cp(source, staging, { recursive: true, force: false, errorOnExist: true });
+  await rename(staging, destination);
+  return { ...paths, data: destination, datasets: path.join(destination, 'datasets'), exports: path.join(destination, 'exports') };
 }

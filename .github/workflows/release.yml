@@ -1,0 +1,56 @@
+name: Signed release candidate
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag, for example v1.0.0-rc.1
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  signed-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Verify version and signing configuration
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ($env:RELEASE_TAG -ne "v$version") { throw 'Tag must match package version' }
+          if (-not $env:CSC_LINK -or -not $env:CSC_KEY_PASSWORD) { throw 'Configure signing credentials before building a distribution candidate' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm audit --prod --audit-level=high
+      - run: pnpm notices
+      - name: Build signed installer
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: pnpm exec electron-builder --win nsis --x64 --publish never --config.forceCodeSigning=true
+      - name: Verify Windows signatures
+        run: |
+          Get-ChildItem release/*.exe | ForEach-Object {
+            if ((Get-AuthenticodeSignature -LiteralPath $_.FullName).Status -ne 'Valid') { throw 'Installer signature verification failed' }
+          }
+      - run: pnpm checksums
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maine-source-signed-candidate
+          path: |
+            release/*.exe
+            release/SHA256SUMS.txt
+            THIRD-PARTY-NOTICES.txt
