@@ -1,6 +1,6 @@
 # Release readiness — 2026-10-23
 
-Current build: **0.2.1 alpha**, not a 1.0 release. Development stays on `main` until launch. This checklist separates implementation and local evidence from external release gates.
+Current build: **0.2.2 alpha**, not a 1.0 release. Development stays on `main` until launch. This checklist separates implementation and local evidence from external release gates.
 
 ## Implemented and locally checked
 
@@ -28,18 +28,24 @@ Earlier full-content samples covered arXiv, Zenodo, CKAN, Dataverse, RSS, Europe
 
 The 0.2.0 unpacked Windows build opened the existing 0.1.5 workspace, retained all nine saved records and five runs, displayed the complete arXiv dataset browser, and validated both original paper/source SHA-256 hashes with zero integrity problems. Full-text paging advanced from characters 1–25,000 to 25,001–50,000 of the saved 130,377-character paper. The NSIS installer built successfully and Windows reports its signature as `NotSigned`. SHA-256 checksums are supplied. This is a same-machine workspace compatibility check, not clean-machine installation/upgrade/uninstall verification.
 
-## External gates before 1.0
+## Release decision and remaining checks
 
-- [ ] Credentialed integration tests for GovInfo and the optional authenticated connectors using keys entered by the owner; never put credentials in issues, logs, fixtures, or source control.
-- [ ] Independently review security boundaries and dependency notices. Enable private vulnerability reporting on GitHub. Review Electron's [security checklist](https://www.electronjs.org/docs/latest/tutorial/security), including custom protocol/fuse hardening; the current extraction subprocess requires Electron's RunAsNode support.
-- [ ] Configure an owner-controlled Windows signing identity and verify Authenticode signatures. No certificate has been supplied. The manual distribution workflow requires signing rather than silently publishing an unsigned binary.
-- [ ] On a fresh Windows VM without Node/Python: install, collect, export, close/restart, resume, relocate storage, upgrade from 0.1.5, and uninstall. Confirm datasets and remembered settings survive upgrade and uninstall does not delete user datasets. A successful local build does not establish this.
-- [ ] Run a multi-hour soak with large real datasets, slow/offline APIs, expired credentials, limited disk space, and OneDrive/redirected Desktop storage. Confirm memory, cancellation latency, and budgets remain acceptable. Fixture checks alone do not establish this.
-- [ ] Exercise the signed release candidate with outside beta users, fix blocking issues, then publish versioned binaries, checksums, source, changelog, and known limitations. No 1.0 release is approved or published by this work.
+The owner has chosen **unsigned Windows distribution** because signing costs money. No independent third-party security audit is planned. These are disclosed limitations, not requirements blocking release. Maintainer security checks, dependency audits, and fixing known security bugs continue.
 
-## Manual signed distribution
+- [x] Version 0.2.1 Windows tests, packaging, installation, upgrade from a real 0.1.5 dataset, embedded-runtime extraction/export, uninstall, and data preservation passed on the disposable CI runner.
+- [x] Version 0.2.1 two-hour public CISA-data replay with injected source outages, restart/resume, validation, and streamed export passed. This is not sustained provider availability testing or every real-world disk/network scenario.
+- [x] Add unsigned distribution disclosure in the README, installer notice, app settings, and candidate artifacts.
+- [ ] Re-run the Windows build/lifecycle workflow for 0.2.2. Its code changes do not inherit 0.2.1's passing checks automatically.
+- [ ] Credentialed integration tests with owner-entered keys and representative full downloads. Settings now offers Test connection for all eight credentialed sources. GitHub/Hugging Face use authenticated identity endpoints; other probes only establish request acceptance. A public endpoint can ignore keys. Per-repository, gated-dataset, metered-content permissions and quota still need actual collection checks.
+- [ ] Enable private vulnerability reporting in GitHub's repository administration settings.
+- [ ] Outside beta checks on ordinary Windows machines: keyboard/display scaling, redirected/OneDrive Desktop, slow/full drives, offline recovery, relocation, reinstall, and remembered settings. The CI developer runner is not a bare consumer VM. No outside testers have been contacted.
+- [ ] Fix beta blockers, choose the 1.0 tag, build the candidate, and publish the exact installer with notices, checksums, source, changelog, and limitations. This work does not publish 1.0 automatically.
 
-The `Signed release candidate` workflow is manually triggered for an existing version tag. It verifies the tag matches `package.json`, requires `CSC_LINK` and `CSC_KEY_PASSWORD` signing secrets, runs checks/tests/audit, builds with code signing required, verifies Authenticode, generates SHA-256 checksums, and uploads artifacts. It does not publish a GitHub release automatically. After the checklist passes, attach those exact artifacts to a release and publish deliberately.
+## Manual distribution
+
+The **Unsigned release candidate** workflow builds an existing version tag matching package.json, runs checks/tests/audit, disables signing identity autodiscovery, builds the installer, checks that it is unsigned, and uploads the installer, checksums, dependency notices, and `UNSIGNED-RELEASE.txt`. The installer displays the unsigned notice ahead of the GPL license. It does not publish automatically. Copy the unsigned disclosure into the GitHub release description when publishing.
+
+The older **Signed release candidate** workflow remains optional for future use if a signing identity is supplied. It is not the planned 1.0 path.
 
 ## Follow-up verification — 2026-10-23
 
@@ -56,12 +62,20 @@ The `Signed release candidate` workflow is manually triggered for an existing ve
 
 Source references: [Open Library access fields](https://openlibrary.org/search/howto/more), [OpenAlex location-specific copies/licenses](https://help.openalex.org/data/locations/), [arXiv API](https://info.arxiv.org/help/api/user-manual.html). Public vulnerability reporting still requires the owner's repository administration setting; see [GitHub's instructions](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository).
 
-The same CI run's two-hour replay job is still running. Do not infer its success from the completed installer job. Signing and authenticated provider checks still require owner-supplied credentials; no outside beta users were contacted. Production dependency audit on 2026-10-23 again reported zero known vulnerabilities.
+The hardened 0.2.1 [CI run](https://github.com/Lithium357/Maine-Source/actions/runs/39966810829) completed successfully, including its two-hour replay. Authenticated provider checks still need owner-entered credentials; no outside beta users were contacted. Production dependency audit on 2026-10-23 again reported zero known vulnerabilities.
 
 ## Filesystem hardening follow-up
 
 A second implementation review found that manually tampered dataset folders could redirect recovery or export through junctions/symbolic links. Recovery now verifies the resolved dataset, record, journal, and assets locations before using them. Exports validate original paths, reject linked companion folders/files, and create destination directories one component at a time so a nested link cannot create files outside the chosen destination. LaTeX export uses the same containment checks. Invalid saved record structures are reported as integrity problems.
 
-All **150 automated tests pass**, including real temporary Windows junction regressions for recovery, source originals, companion folders, and nested output directories. This is a maintainer implementation review, not an independent third-party security audit. The hardened commit `4441333` also passed [Windows tests, packaging, installation, legacy upgrade, embedded runtime checks, and uninstall](https://github.com/Lithium357/Maine-Source/actions/runs/39966810829/job/120458683058). Its separate two-hour replay is still running. The rebuilt local 0.2.1 app passed its isolated packaged-runtime diagnostic, and its installer checksum matched `SHA256SUMS.txt`; the installer remains unsigned.
+All **150 automated tests pass**, including real temporary Windows junction regressions for recovery, source originals, companion folders, and nested output directories. This is a maintainer implementation review, not an independent third-party security audit. The hardened commit `4441333` also passed [Windows tests, packaging, installation, legacy upgrade, embedded runtime checks, and uninstall](https://github.com/Lithium357/Maine-Source/actions/runs/39966810829/job/120458683058). Its separate two-hour replay also passed. The rebuilt local 0.2.1 app passed its isolated packaged-runtime diagnostic, and its installer checksum matched `SHA256SUMS.txt`; the installer remains unsigned.
 
 The [outside beta guide](beta-testing.md) and GitHub bug report form are ready. These provide a repeatable test/report process; they do not establish that outside beta testing has occurred.
+
+## 0.2.2 verification
+
+All **154 automated tests pass** and JavaScript syntax checks pass. New connection checks use fixed provider endpoints, bounded responses/timeouts, sanitized errors, no dataset writes, and no account details in results. Only one connection check runs at a time. Owner credentials were not read for this verification.
+
+Small live NASA and GovInfo requests succeeded using the publicly documented `DEMO_KEY`. This is not validation of owner credentials. A full GovInfo Federal Register attempt exposed a missing HTML format: whole-volume metadata advertises XML/PDF without HTML. The connector now follows supported advertised formats and rejects unexpected download hosts/paths, with a regression test. A subsequent full BILLS attempt timed out at the 120-second limit with the demo key, so full GovInfo collection remains unverified rather than marked passing.
+
+Unsigned publication copy is prepared in [the release-description template](release-notes-template.md). No 1.0 tag or public release has been created.

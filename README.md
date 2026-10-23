@@ -2,11 +2,11 @@
 
 A Windows desktop workbench for collecting text and code into traceable ML datasets. Pick sources with checkboxes, define reusable recipes, and watch a customizable local dashboard.
 
-**Status: 0.2.1 alpha.** Underlying content is the default: papers, deposited files, linked articles, source code, and complete structured records are collected alongside provenance. Original files are saved separately from extracted text and included in portable exports. Metadata-only collection is an explicit recipe option. This is a local Windows application with no hosted collection backend.
+**Status: 0.2.2 alpha.** Underlying content is the default: papers, deposited files, linked articles, source code, and complete structured records are collected alongside provenance. Original files are saved separately from extracted text and included in portable exports. Metadata-only collection is an explicit recipe option. This is a local Windows application with no hosted collection backend.
 
 ## Run or install
 
-Run `Maine Source Setup 0.2.1.exe` from the build's `release/` folder to install for your Windows user. This alpha installer is unsigned; public distribution still needs a signing certificate and release verification. An unpacked app is also generated in `release/win-unpacked/`.
+Run `Maine Source Setup 0.2.2.exe` from the build's `release/` folder to install for your Windows user. **This application is unsigned because the developer cannot currently afford code signing.** Windows may display an unknown-publisher or protection warning. We plan to distribute 1.0 unsigned too. Download only from the official [GitHub releases](https://github.com/Lithium357/Maine-Source/releases) and compare the published SHA-256 checksum. Checksums detect file changes; they do not provide a verified publisher identity. No independent security audit has been performed. An unpacked app is also generated in `release/win-unpacked/`.
 
 For development, install Node.js 24 and pnpm 11, then:
 
@@ -28,7 +28,7 @@ pnpm dist
 ## First collection
 
 1. Open **Sources**, check the sources you want, or use a cybersecurity, engineering, research, or general knowledge preset. Save your selection.
-2. Open **Connections & settings** to add credentials. Public GitHub repositories work without a token. Optional tokens should be read-only; write permissions are unnecessary. NASA uses one credential across supported NASA services; the first connector collects APOD explanations.
+2. Open **Connections & settings** to add credentials, then use **Test connection**. A successful small request does not prove access to every dataset or download. Public GitHub repositories work without a token. Optional tokens should be read-only; write permissions are unnecessary. NASA uses one credential across supported NASA services; the first connector collects APOD explanations.
 3. Choose **New collection**, name the dataset, and enter each source's query. GitHub takes `owner/repo` names, Hugging Face takes a dataset ID, and NASA accepts a start date.
 4. Keep **Underlying content + original files + metadata**, or explicitly choose metadata-only collection. Set per-file/per-record download caps, keyword exclusions, deduplication, and optional license rules. Blacklists inspect extracted full content.
 5. Set at least one limit. The first elapsed-time, saved-byte, or accepted-document limit reached ends the whole job.
@@ -51,7 +51,7 @@ The home dashboard includes activity history, source mix, recent jobs, filter ou
 | Hugging Face | Selected Dataset Viewer text plus complete returned rows | Optional read token | Dataset-card declarations and revision/split/row IDs retained |
 | Wikipedia | Complete article extract and supplied revision-pinned wiki source | None | Wiki terms, revision IDs, and history links |
 | Wikidata | Complete entity JSON, including statements and references | None | CC0 source declaration |
-| GovInfo | Publication HTML and available PDF | Required api.data.gov key | Unknown; authenticated live check still outstanding |
+| GovInfo | Publication HTML and available PDF | Required api.data.gov key | Unknown; public demo-key sample checked, owner-key permissions still unverified |
 | GitHub Security Advisories | Reviewed advisory descriptions, packages, version ranges, and aliases | Optional read-only GitHub token | CC-BY-4.0 source declaration |
 | OSV | Vulnerabilities for a selected package/ecosystem/version | None | Original upstream data retained; no blanket license assignment |
 | arXiv papers & source | Original PDF, submitted source package, full extracted text, abstract | None | Available paper license link retained |
@@ -79,9 +79,11 @@ See the [source expansion research](docs/source-research-2026-10-22.md) for furt
 
 Live checks on 2026-10-22 retrieved underlying files/content through arXiv, CKAN, Dataverse, Zenodo, RSS, Europe PMC, GitHub, and Wikidata. The arXiv end-to-end check saved the 15-page PDF and submitted source archive for `1706.03762v7`, extracted 130,377 characters across paper and source, found eleven LaTeX-related members, and verified exported original-file hashes. These are small integration samples, not completeness benchmarks. Use `node scripts/smoke-content.mjs` for the paper storage/export check or `pnpm smoke -- --full arxiv` for retrieval. Ordinary `pnpm smoke` checks discovery/metadata without following content links.
 
-Version 0.2.1 passes 150 automated tests, including full-text keyword matching, original-file budget accounting, portable exports, partial failures, and cancellation of isolated extraction subprocesses. The 0.1.4 packaged GUI collected the complete arXiv test paper with both originals, 130,377 extracted characters, zero errors, and the exact one-record stop. The inspector displayed both original-file controls and downloaded status. The 0.1.5 GUI saved UTF-32 preferences and exported that existing paper as UTF-32 plain text (521,788 bytes) and actual LaTeX source (10 `.tex` members), preserving both original-file hashes. Earlier GUI checks verified CISA on 0.1.2 and USGS on 0.1.3. See [content coverage](docs/content-coverage.md) for the source audit and exact behavior.
+Version 0.2.2 passes 154 automated tests, including full-text keyword matching, original-file budget accounting, portable exports, partial failures, and cancellation of isolated extraction subprocesses. The 0.1.4 packaged GUI collected the complete arXiv test paper with both originals, 130,377 extracted characters, zero errors, and the exact one-record stop. The inspector displayed both original-file controls and downloaded status. The 0.1.5 GUI saved UTF-32 preferences and exported that existing paper as UTF-32 plain text (521,788 bytes) and actual LaTeX source (10 `.tex` members), preserving both original-file hashes. Earlier GUI checks verified CISA on 0.1.2 and USGS on 0.1.3. See [content coverage](docs/content-coverage.md) for the source audit and exact behavior.
 
 ## Release preparation
+
+The owner has chosen unsigned distribution and no independent third-party security audit. These are disclosed limitations, not pending signing/audit requirements. The manual **Unsigned release candidate** workflow builds tagged candidates with the disclosure, notices, and checksums; it does not publish automatically.
 
 Storage can be copied to another drive from Settings; the previous folder is retained. Datasets now offers browsing/search/filtering across all records, full-text paging, original-file validation, Resume for unfinished runs, and confirmed Recycle Bin removal. Runtime dependency notices ship with the app, and builds generate SHA-256 checksums. See [release readiness and remaining external gates](docs/release-readiness.md) and [changelog](CHANGELOG.md). This is still an alpha, not a release-ready 1.0.
 

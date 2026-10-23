@@ -1,6 +1,6 @@
 # Windows beta test guide
 
-This is an alpha test plan, not a declaration of 1.0 readiness. Use public sample content and a small storage budget. The current local installer is unsigned; a signed candidate is required for the planned public launch.
+This is an alpha test plan, not a declaration of 1.0 readiness. Use public sample content and a small storage budget. The owner has chosen unsigned distribution because code signing costs money. Windows may show an unknown-publisher or protection warning. No independent security audit has been performed.
 
 ## Fresh install and upgrade
 
@@ -14,7 +14,7 @@ This is an alpha test plan, not a declaration of 1.0 readiness. Use public sampl
 
 ## Failure and usability checks
 
-- Disconnect/reconnect networking during a collection. Try an invalid or expired key. Confirm clear errors, bounded retries, and responsive Stop.
+- Disconnect/reconnect networking during a collection. Use Test connection with a valid key, then an invalid or expired key. A successful public request is not proof of credential validity or access to a particular download. Confirm clear errors, bounded retries, and responsive Stop.
 - Use small record/time/storage limits. Observe which condition stops the run and verify it never accepts a record beyond the configured saved-byte budget.
 - Browse/search records, inspect full text pages and original files, and run validation. Empty text/unknown licensing should be warnings, not silently presented as complete content.
 - Use the Recycle Bin action only on a test dataset. Confirm cancellation preserves it, confirmed removal keeps existing exports, and restoration is possible through normal Windows tools.

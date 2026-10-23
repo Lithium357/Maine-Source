@@ -1,0 +1,11 @@
+UNSIGNED WINDOWS APPLICATION
+
+Maine Source is unsigned because the developer cannot currently afford code signing. Windows may display an unknown-publisher or protection warning.
+
+Get installers and SHA-256 checksums from the official project releases:
+https://github.com/Lithium357/Maine-Source/releases
+
+Checksums help detect file changes; they are not a trusted publisher signature. No independent security audit has been performed. API availability and licensing declarations vary by source. Review known limitations before collecting data.
+
+The application is free and open-source software under GPL-3.0-only. Dataset content has its own rights and is not covered by the application license.
+

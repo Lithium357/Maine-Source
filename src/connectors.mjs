@@ -220,8 +220,17 @@ async function* govinfo({ input, key, http }) {
     const data = await http.get(next, { interval: 4000 });
     for (const item of data.packages || []) {
       const meta = await http.get(url(`https://api.govinfo.gov/packages/${encodeURIComponent(item.packageId)}/summary`, { api_key: key }), { interval: 4000 });
-      const text = await http.get(url(`https://api.govinfo.gov/packages/${encodeURIComponent(item.packageId)}/htm`, { api_key: key }), { json: false, interval: 4000 });
-      yield { id: item.packageId, title: item.title, text: plain(text), url: `https://www.govinfo.gov/app/details/${item.packageId}`, version: item.lastModified, rights: unknown(), attribution: meta.governmentAuthor1 || 'GovInfo', contentRequests: [{ data: text, filename: `${item.packageId}.html`, mediaType: 'text/html' }, { url: `https://www.govinfo.gov/content/pkg/${encodeURIComponent(item.packageId)}/pdf/${encodeURIComponent(item.packageId)}.pdf`, filename: `${item.packageId}.pdf`, role: 'publication PDF' }], metadata: { collection, original: meta } };
+      // Whole-volume packages (for example FR) often have no HTML. Request only
+      // formats advertised by the summary, rather than aborting on a guessed /htm.
+      const requests = [];
+      for (const [field, format, extension] of [['txtLink', 'htm', 'html'], ['xmlLink', 'xml', 'xml'], ['pdfLink', 'pdf', 'pdf']]) {
+        if (!meta.download?.[field]) continue;
+        const expected = `https://api.govinfo.gov/packages/${encodeURIComponent(item.packageId)}/${format}`;
+        if (meta.download[field] !== expected) throw new Error('Unexpected GovInfo content URL');
+        requests.push({ url: url(expected, { api_key: key }), filename: `${item.packageId}.${extension}`, role: `publication ${format}` });
+      }
+      if (!requests.length) requests.push({ error: 'No supported publication download was advertised by GovInfo' });
+      yield { id: item.packageId, title: item.title, text: '', url: `https://www.govinfo.gov/app/details/${item.packageId}`, version: item.lastModified, rights: unknown(), attribution: meta.governmentAuthor1 || 'GovInfo', contentRequests: requests, metadata: { collection, original: meta } };
     }
     next = data.nextPage;
     if (next) { const p = new URL(next); p.searchParams.set('api_key', key); next = p.href; }

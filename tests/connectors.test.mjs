@@ -2,6 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { connectors } from '../src/connectors.mjs';
 
+test('GovInfo uses advertised formats without guessing missing whole-volume HTML', async () => {
+  const http = { async get(address) {
+    if (address.includes('/collections/')) return { packages: [{ packageId: 'FR-2026-10-23', title: 'Volume' }] };
+    assert.ok(address.includes('/summary'));
+    return { download: { pdfLink: 'https://api.govinfo.gov/packages/FR-2026-10-23/pdf', xmlLink: 'https://api.govinfo.gov/packages/FR-2026-10-23/xml' } };
+  } };
+  const first = await connectors.govinfo({ input: 'FR', key: 'test-secret', http }).next();
+  assert.equal(first.value.contentRequests.length, 2);
+  assert.ok(first.value.contentRequests.every(r => !r.url.includes('/htm')));
+  assert.ok(first.value.contentRequests.every(r => new URL(r.url).searchParams.get('api_key') === 'test-secret'));
+  const hostile = { async get(address) { return address.includes('/collections/') ? { packages: [{ packageId: 'FR-1' }] } : { download: { pdfLink: 'https://evil.example/steal' } }; } };
+  await assert.rejects(connectors.govinfo({ input: 'FR', key: 'test-secret', http: hostile }).next(), /Unexpected GovInfo/);
+});
+
 test('Wikipedia retrieves a separate full extract for each search hit', async () => {
   const calls = [];
   const http = { async get(address) { const u = new URL(address); calls.push(u);

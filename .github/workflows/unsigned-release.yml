@@ -1,0 +1,54 @@
+name: Unsigned release candidate
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag matching package.json
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  unsigned-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Verify version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ($env:RELEASE_TAG -ne "v$version") { throw 'Tag must match package version' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm audit --prod --audit-level=high
+      - name: Build explicitly unsigned installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: pnpm dist
+      - name: Verify disclosure and unsigned installer
+        shell: pwsh
+        run: |
+          Get-ChildItem release/*.exe | ForEach-Object {
+            if ((Get-AuthenticodeSignature -LiteralPath $_.FullName).Status -ne 'NotSigned') { throw 'Unexpected installer signature status' }
+          }
+          Copy-Item docs/UNSIGNED-RELEASE.txt release/UNSIGNED-RELEASE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maine-source-unsigned-candidate
+          path: |
+            release/*.exe
+            release/SHA256SUMS.txt
+            release/UNSIGNED-RELEASE.txt
+            THIRD-PARTY-NOTICES.txt

@@ -76,6 +76,16 @@ else app.whenReady().then(async () => {
     if (persist && keys[id]) storedKeys[id] = safeStorage.encryptString(keys[id]).toString('base64');
     await atomicJSON(vaultPath(), storedKeys); emit();
   }));
+  const connectionChecks = new Set();
+  ipcMain.handle('credential:test', respond(async ({ id }) => {
+    if (!catalog.sources.some(s => s.id === id && s.key)) throw new Error('Invalid source');
+    if (collector.active || collector.starting) throw new Error('Stop collection before testing connections');
+    if (connectionChecks.size) throw new Error('Wait for the current connection test');
+    const key = keys[id];
+    connectionChecks.add(id);
+    try { return await (await import('../src/connection-check.mjs')).checkConnection(id, key); }
+    finally { connectionChecks.delete(id); }
+  }));
   ipcMain.handle('local:pick', respond(async () => {
     const choice = await dialog.showOpenDialog(window, { title: 'Choose text, code, or JSONL files', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Text and code', extensions: ['jsonl', 'txt', 'md', 'py', 'js', 'ts', 'tsx', 'rs', 'go', 'c', 'cpp', 'h', 'java', 'html', 'xml', 'csv'] }, { name: 'All files', extensions: ['*'] }] });
     if (!choice.canceled) { localPaths = choice.filePaths; collector.localPaths = localPaths; emit(); }

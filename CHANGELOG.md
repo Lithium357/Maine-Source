@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 — unsigned distribution preparation
+
+- Disclose unsigned Windows distribution and the absence of an independent security audit in the README, installer notice, and app settings.
+- Add an explicitly unsigned manual candidate workflow with checksums and dependency notices.
+- Add local Test connection controls for the eight credentialed sources, with bounded read-only requests, credential redaction, and explicit limits on what a successful request proves.
+- Fix GovInfo whole-volume retrieval by requesting advertised HTML/XML/PDF formats instead of guessing an unavailable HTML endpoint.
+- Record passing two-hour Windows replay and installation/upgrade/uninstall checks for 0.2.1.
+
 ## 0.2.1 — 2026-10-23 (alpha)
 
 - Reject linked/tampered dataset and export paths before reading, cleaning up, or writing originals; report structurally corrupt records.
