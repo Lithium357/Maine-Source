@@ -6,3 +6,13 @@ coverage/
 .env
 data/
 .test-data/
+
+__pycache__/
+*.pyc
+*.egg-info/
+python/build/
+python/dist/
+maine-source-keys.json
+*.keys.json
+keys.json
+credentials.json

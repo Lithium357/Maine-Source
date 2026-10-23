@@ -46,7 +46,7 @@ export async function relocateStorage(paths, parent) {
   async function count(directory) { for (const entry of await readdir(directory, { withFileTypes: true })) { if (entry.isSymbolicLink()) throw new Error('Storage contains a symbolic link; relocation stopped'); const file = path.join(directory, entry.name); if (entry.isDirectory()) await count(file); else bytes += (await stat(file)).size; } }
   await count(source); await ensureFreeSpace(parent, bytes);
   const staging = path.join(parent, `.maine-source-move-${randomUUID()}`);
-  await cp(source, staging, { recursive: true, force: false, errorOnExist: true });
+  await cp(source, staging, { recursive: true, force: false, errorOnExist: true, filter: filename => path.relative(source, filename) !== path.join('datasets', '.maine-source-workspace.lock') });
   await rename(staging, destination);
   return { ...paths, data: destination, datasets: path.join(destination, 'datasets'), exports: path.join(destination, 'exports') };
 }

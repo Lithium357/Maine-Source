@@ -14,6 +14,14 @@ Run `Maine Source Setup VERSION.exe`. The default dataset folder is `Desktop/dat
 
 Select sources with checkboxes, add optional API keys locally, test connections, and create a collection with time/storage/record limits. Full-content mode preserves original downloads alongside extracted text and provenance. License filtering is optional and controlled by the user. The app license does not grant rights to collected content.
 
+## Python API and credential transfer
+
+The release includes a Python SDK wheel. Install it with pip and use `from maine_source import Client` to collect, pause/resume, browse, validate, move, and export datasets through the installed app runtime. Python 3.10+ is required for the SDK; the GUI does not require Python. See [the Python API guide](https://github.com/Lithium357/Maine-Source/blob/main/python/README.md).
+
+Settings includes **Import keys JSON** and **Export keys JSON**. The same credential files work with the SDK. Portable JSON stores keys in plaintext: keep it private during transfer. GUI import offers session-only use or encrypted local persistence; API keys are held in memory unless explicitly exported.
+
+Paused, stopped, and interrupted runs have Resume controls in the app. Saved progress is retained; reached total budgets must be raised to continue.
+
 ## Known limitations
 
 - Some providers require credentials, enforce quotas, restrict individual downloads, or fail temporarily. A successful connection test does not prove every dataset or download is accessible.

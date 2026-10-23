@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 — Python API, portable credentials, and Resume controls
+
+- Add a dependency-free Python SDK and packaged backend over private local stdin/stdout, with no GUI automation or network listener.
+- Expose source discovery, recipe defaults, collection, status, pause/resume/stop, record browsing, validation, relocation, and export to agents.
+- Add GUI/Python credential JSON import/export, strict whole-file validation, session-only API keys, and optional encrypted GUI persistence. Portable files are explicitly plaintext.
+- Add workspace leases shared by GUI and API processes, with recovery of locks left by dead processes.
+- Put direct Resume actions in Jobs, Datasets, and run details, including active paused runs and saved interrupted/stopped collections.
+- Build a Python wheel alongside Windows installers and include it in release checksums. Test the SDK against both source and packaged backends.
+
 ## 0.2.3 — per-dataset download folders
 
 - Choose and remember a download folder for each recipe; new runs create an isolated dataset subfolder there.

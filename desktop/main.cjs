@@ -5,6 +5,7 @@ const { pathToFileURL } = require('node:url');
 
 let window, collector, state, catalog, policy, atomicJSON, storage, output, engine, datasets, storageTools;
 let workspaceBusy = false;
+let workspaceLease;
 let keys = {}, storedKeys = {}, localPaths = [], closing = false;
 const uiFile = path.join(__dirname, '..', 'ui', 'index.html');
 const statePath = () => path.join(app.getPath('userData'), 'preferences.json');
@@ -40,6 +41,7 @@ else app.whenReady().then(async () => {
   state = { selectedSources: [], recipes: [], dashboard: catalog.widgets.map(w => w.id), onboardingDone: false };
   try { state = { ...state, ...JSON.parse(await fs.readFile(statePath(), 'utf8')) }; } catch (e) { if (e.code !== 'ENOENT') await dialog.showMessageBox({ type: 'warning', message: 'Preferences could not be loaded. Defaults will be used.' }); }
   storage = await storageTools.prepareStorage({ desktop: app.getPath('desktop'), userData: app.getPath('userData'), dataDirectory: state.dataDirectory });
+  workspaceLease = await (await import('../src/workspace-lock.mjs')).acquireWorkspace(storage.datasets);
   try { storedKeys = JSON.parse(await fs.readFile(vaultPath(), 'utf8')); } catch {}
   try { state.textOutput = output.validateTextOutput(state.textOutput); } catch { state.textOutput = output.defaultTextOutput(); }
   if (safeStorage.isEncryptionAvailable()) for (const [id, encrypted] of Object.entries(storedKeys)) { try { keys[id] = safeStorage.decryptString(Buffer.from(encrypted, 'base64')); } catch {} }
@@ -76,6 +78,27 @@ else app.whenReady().then(async () => {
     if (persist && keys[id]) storedKeys[id] = safeStorage.encryptString(keys[id]).toString('base64');
     await atomicJSON(vaultPath(), storedKeys); emit();
   }));
+  ipcMain.handle('credential:import', respond(() => workspaceOperation(async () => {
+    if (collector.active) throw new Error('Stop collection before importing credentials');
+    const selected = await dialog.showOpenDialog(window, { title: 'Import API keys from JSON', properties: ['openFile'], filters: [{ name: 'Credential JSON', extensions: ['json'] }] });
+    if (selected.canceled) return 'Import canceled.';
+    const imported = await (await import('../src/credentials.mjs')).readCredentialFile(selected.filePaths[0]);
+    const ids = Object.keys(imported), secure = safeStorage.isEncryptionAvailable();
+    const choice = await dialog.showMessageBox(window, { type: 'question', title: 'Import API keys', message: `Import ${ids.length} credentials?`, detail: `${ids.map(id => catalog.sources.find(s => s.id === id).name).join(', ')}. Existing keys for these sources will be replaced; other sources are kept.`, buttons: secure ? ['Cancel', 'This session only', 'Remember encrypted'] : ['Cancel', 'This session only'], defaultId: 1, cancelId: 0, noLink: true });
+    if (choice.response === 0) return 'Import canceled.';
+    const nextStored = { ...storedKeys };
+    for (const id of ids) { delete nextStored[id]; if (secure && choice.response === 2) nextStored[id] = safeStorage.encryptString(imported[id]).toString('base64'); }
+    await atomicJSON(vaultPath(), nextStored);
+    storedKeys = nextStored; keys = { ...keys, ...imported }; emit();
+    return `${ids.length} credentials imported${choice.response === 2 ? ' and remembered using encrypted system storage' : ' for this session'}.`;
+  })));
+  ipcMain.handle('credential:export', respond(() => workspaceOperation(async () => {
+    const bundle = (await import('../src/credentials.mjs')).credentialBundle(keys);
+    const choice = await dialog.showSaveDialog(window, { title: 'Export plaintext API keys — protect this file', defaultPath: 'maine-source-keys.json', filters: [{ name: 'Plaintext credential JSON', extensions: ['json'] }] });
+    if (choice.canceled) return 'Export canceled.';
+    await atomicJSON(choice.filePath, bundle);
+    return 'API keys exported as plaintext JSON. Keep this file private when transferring it.';
+  })));
   const connectionChecks = new Set();
   ipcMain.handle('credential:test', respond(async ({ id }) => {
     if (!catalog.sources.some(s => s.id === id && s.key)) throw new Error('Invalid source');
@@ -135,8 +158,10 @@ else app.whenReady().then(async () => {
     if (choice.canceled) return 'Storage unchanged.';
     await collector.pendingSave;
     const next = await storageTools.relocateStorage(storage, choice.filePaths[0]);
+    const nextLease = await (await import('../src/workspace-lock.mjs')).acquireWorkspace(next.datasets);
     const previous = state.dataDirectory; state.dataDirectory = next.data;
-    try { await save(); } catch (error) { state.dataDirectory = previous; throw error; }
+    try { await save(); } catch (error) { state.dataDirectory = previous; await nextLease.release(); throw error; }
+    await workspaceLease.release(); workspaceLease = nextLease;
     storage = next; collector.root = storage.datasets; emit();
     return 'Storage copied and switched. The previous folder is kept as a backup.';
   })));
@@ -155,8 +180,8 @@ else app.whenReady().then(async () => {
   window.on('close', async event => {
     if (closing) return;
     event.preventDefault(); closing = true; collector.stop();
-    try { while (workspaceBusy) await new Promise(resolve => setTimeout(resolve, 100)); await collector.running; await collector.pendingSave; } finally { window.destroy(); app.quit(); }
+    try { while (workspaceBusy) await new Promise(resolve => setTimeout(resolve, 100)); await collector.running; await collector.pendingSave; } finally { await workspaceLease?.release(); window.destroy(); app.quit(); }
   });
-}).catch(async error => { await dialog.showMessageBox({ type: 'error', title: 'Maine Source could not start', message: error.message }); app.quit(); });
+}).catch(async error => { await workspaceLease?.release(); await dialog.showMessageBox({ type: 'error', title: 'Maine Source could not start', message: error.message }); app.quit(); });
 app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });
 app.on('window-all-closed', () => app.quit());

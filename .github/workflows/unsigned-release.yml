@@ -33,12 +33,26 @@ jobs:
       - run: pnpm check
       - name: Generate release notes with every source and API-key link
         run: node scripts/release-notes.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test Python API with source backend
+        run: python -m unittest discover -s python/tests -v
       - run: pnpm test
       - run: pnpm audit --prod --audit-level=high
       - name: Build explicitly unsigned installer
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: pnpm dist
+      - name: Test Python API with packaged Windows backend
+        env:
+          MAINE_SOURCE_TEST_APP: ${{ github.workspace }}/release/win-unpacked/Maine Source.exe
+        run: python -m unittest discover -s python/tests -v
+      - name: Build Python SDK wheel and checksums
+        run: |
+          python -m pip wheel ./python --no-deps --wheel-dir release
+          if ($LASTEXITCODE -ne 0) { throw 'Python wheel build failed' }
+          node scripts/checksums.mjs
       - name: Verify disclosure and unsigned installer
         shell: pwsh
         run: |
@@ -51,6 +65,7 @@ jobs:
           name: maine-source-unsigned-candidate
           path: |
             release/*.exe
+            release/*.whl
             release/SHA256SUMS.txt
             release/RELEASE_NOTES.md
             release/UNSIGNED-RELEASE.txt

@@ -20,9 +20,23 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test Python API with source backend
+        run: python -m unittest discover -s python/tests -v
       - run: pnpm test
       - run: pnpm audit --prod --audit-level=high
       - run: pnpm dist
+      - name: Test Python API with packaged Windows backend
+        env:
+          MAINE_SOURCE_TEST_APP: ${{ github.workspace }}/release/win-unpacked/Maine Source.exe
+        run: python -m unittest discover -s python/tests -v
+      - name: Build Python SDK wheel and checksums
+        run: |
+          python -m pip wheel ./python --no-deps --wheel-dir release
+          if ($LASTEXITCODE -ne 0) { throw 'Python wheel build failed' }
+          node scripts/checksums.mjs
       - name: Build legacy upgrade fixture
         shell: pwsh
         run: |
@@ -45,6 +59,7 @@ jobs:
           name: maine-source-windows
           path: |
             release/*.exe
+            release/*.whl
             release/SHA256SUMS.txt
             THIRD-PARTY-NOTICES.txt
             release/windows-lifecycle-report.json

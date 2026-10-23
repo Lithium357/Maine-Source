@@ -2,11 +2,11 @@
 
 A Windows desktop workbench for collecting text and code into traceable ML datasets. Pick sources with checkboxes, define reusable recipes, and watch a customizable local dashboard.
 
-**Status: 0.2.3 alpha.** Underlying content is the default: papers, deposited files, linked articles, source code, and complete structured records are collected alongside provenance. Original files are saved separately from extracted text and included in portable exports. Metadata-only collection is an explicit recipe option. This is a local Windows application with no hosted collection backend.
+**Status: 0.3.0 alpha.** Underlying content is the default: papers, deposited files, linked articles, source code, and complete structured records are collected alongside provenance. Original files are saved separately from extracted text and included in portable exports. Metadata-only collection is an explicit recipe option. This is a local Windows application with no hosted collection backend.
 
 ## Run or install
 
-Run `Maine Source Setup 0.2.3.exe` from the build's `release/` folder to install for your Windows user. **This application is unsigned because the developer cannot currently afford code signing.** Windows may display an unknown-publisher or protection warning. We plan to distribute 1.0 unsigned too. Download only from the official [GitHub releases](https://github.com/Lithium357/Maine-Source/releases) and compare the published SHA-256 checksum. Checksums detect file changes; they do not provide a verified publisher identity. No independent security audit has been performed. An unpacked app is also generated in `release/win-unpacked/`.
+Run `Maine Source Setup 0.3.0.exe` from the build's `release/` folder to install for your Windows user. **This application is unsigned because the developer cannot currently afford code signing.** Windows may display an unknown-publisher or protection warning. We plan to distribute 1.0 unsigned too. Download only from the official [GitHub releases](https://github.com/Lithium357/Maine-Source/releases) and compare the published SHA-256 checksum. Checksums detect file changes; they do not provide a verified publisher identity. No independent security audit has been performed. An unpacked app is also generated in `release/win-unpacked/`.
 
 For development, install Node.js 24 and pnpm 11, then:
 
@@ -36,6 +36,14 @@ pnpm dist
 7. Collect, inspect decisions and original files, then export JSONL or text from **Datasets**. Exports include a companion manifest and, when originals exist, an adjacent `.assets` folder. Keep all three together.
 
 The home dashboard includes activity history, source mix, recent jobs, filter outcomes, license declarations, storage budgets, and events. **Customize** lets you hide widgets, drag them to reorder, or use keyboard-accessible arrow controls. Layout changes persist.
+
+## Python API and portable keys
+
+Agents can collect without GUI control using the [Python API](python/README.md). Install the release wheel with `python -m pip install maine_source-0.3.0-py3-none-any.whl`, then use `from maine_source import Client`. The installed app supplies its own backend runtime; only the Python API needs Python 3.10+. Source-checkout development also supports Node.js 24. The API supports source discovery, recipes, collection, progress, pause/resume/stop, record browsing, validation, folder changes, and export. It uses a private local subprocess connection; no network listener is opened.
+
+In **Connections & settings**, use **Import keys JSON** / **Export keys JSON** to transfer all keys between machines or configurations. Both flat source-ID mappings and versioned bundles work with the GUI and Python API. **Portable credential JSON is plaintext**; keep it private and out of Git. GUI imports can be session-only or remembered with encrypted system storage. Python keys remain in that client’s memory unless explicitly exported.
+
+**Resume:** paused runs have a direct Resume button in Jobs, Datasets, and run details. After closing/restarting the app, interrupted or stopped runs resume into the same dataset with saved records/checkpoints. Reached total budgets must be increased. For local imports, choose the original files again. Pauses still count toward wall-clock limits.
 
 ## Source coverage
 
@@ -82,7 +90,7 @@ See the [source expansion research](docs/source-research-2026-10-22.md) for furt
 
 Live checks on 2026-10-22 retrieved underlying files/content through arXiv, CKAN, Dataverse, Zenodo, RSS, Europe PMC, GitHub, and Wikidata. The arXiv end-to-end check saved the 15-page PDF and submitted source archive for `1706.03762v7`, extracted 130,377 characters across paper and source, found eleven LaTeX-related members, and verified exported original-file hashes. These are small integration samples, not completeness benchmarks. Use `node scripts/smoke-content.mjs` for the paper storage/export check or `pnpm smoke -- --full arxiv` for retrieval. Ordinary `pnpm smoke` checks discovery/metadata without following content links.
 
-Version 0.2.3 passes 159 automated tests, including full-text keyword matching, original-file budget accounting, portable exports, partial failures, and cancellation of isolated extraction subprocesses. The 0.1.4 packaged GUI collected the complete arXiv test paper with both originals, 130,377 extracted characters, zero errors, and the exact one-record stop. The inspector displayed both original-file controls and downloaded status. The 0.1.5 GUI saved UTF-32 preferences and exported that existing paper as UTF-32 plain text (521,788 bytes) and actual LaTeX source (10 `.tex` members), preserving both original-file hashes. Earlier GUI checks verified CISA on 0.1.2 and USGS on 0.1.3. See [content coverage](docs/content-coverage.md) for the source audit and exact behavior.
+Version 0.3.0 passes 163 automated tests, including full-text keyword matching, original-file budget accounting, portable exports, partial failures, and cancellation of isolated extraction subprocesses. The 0.1.4 packaged GUI collected the complete arXiv test paper with both originals, 130,377 extracted characters, zero errors, and the exact one-record stop. The inspector displayed both original-file controls and downloaded status. The 0.1.5 GUI saved UTF-32 preferences and exported that existing paper as UTF-32 plain text (521,788 bytes) and actual LaTeX source (10 `.tex` members), preserving both original-file hashes. Earlier GUI checks verified CISA on 0.1.2 and USGS on 0.1.3. See [content coverage](docs/content-coverage.md) for the source audit and exact behavior.
 
 ## Release preparation
 

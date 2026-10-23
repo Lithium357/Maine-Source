@@ -1,6 +1,6 @@
 # Release readiness — 2026-10-23
 
-Current build: **0.2.3 alpha**, not a 1.0 release. Development stays on `main` until launch. This checklist separates implementation and local evidence from external release gates.
+Current build: **0.3.0 alpha**, not a 1.0 release. Development stays on `main` until launch. This checklist separates implementation and local evidence from external release gates.
 
 ## Implemented and locally checked
 
@@ -35,7 +35,7 @@ The owner has chosen **unsigned Windows distribution** because signing costs mon
 - [x] Version 0.2.1 Windows tests, packaging, installation, upgrade from a real 0.1.5 dataset, embedded-runtime extraction/export, uninstall, and data preservation passed on the disposable CI runner.
 - [x] Version 0.2.1 two-hour public CISA-data replay with injected source outages, restart/resume, validation, and streamed export passed. This is not sustained provider availability testing or every real-world disk/network scenario.
 - [x] Add unsigned distribution disclosure in the README, installer notice, app settings, and candidate artifacts.
-- [ ] Run the Windows build/lifecycle workflow for the current 0.2.3 candidate. Its code changes do not inherit older versions' passing checks automatically.
+- [ ] Run the Windows build/lifecycle workflow for the current 0.3.0 candidate. Its code changes do not inherit older versions' passing checks automatically.
 - [ ] Credentialed integration tests with owner-entered keys and representative full downloads. Settings now offers Test connection for all eight credentialed sources. GitHub/Hugging Face use authenticated identity endpoints; other probes only establish request acceptance. A public endpoint can ignore keys. Per-repository, gated-dataset, metered-content permissions and quota still need actual collection checks.
 - [ ] Enable private vulnerability reporting in GitHub's repository administration settings.
 - [ ] Outside beta checks on ordinary Windows machines: keyboard/display scaling, redirected/OneDrive Desktop, slow/full drives, offline recovery, relocation, reinstall, and remembered settings. The CI developer runner is not a bare consumer VM. No outside testers have been contacted.
@@ -87,3 +87,11 @@ Recipes can choose an existing absolute download parent; each run creates its ow
 Regression coverage includes custom-location restart/resume/export, moving one dataset without affecting another, low space, unavailable drives, nested/existing destinations, linked files and replacement parents, and refusing moves during collection. Packaged-runtime diagnostics now exercise custom download and move before export/reopen.
 
 Version 0.2.3 passed **159 automated tests** and syntax checks. Its local Windows installer built successfully, and the packaged-runtime diagnostic passed custom-folder collection, copied-file validation, relocation, export, and reopening with `customDatasetLocationVerified: true`. Disposable Windows lifecycle CI for this exact commit is separate evidence and must complete before being marked passed.
+
+## 0.3.0 API and credential transfer
+
+The local Python SDK uses the installed runtime in Node mode, avoiding Windows GUI-executable pipe behavior. No GUI automation, separate Node installation, network service, or remote credential endpoint is needed. Source-checkout development can use Node.js 24. The SDK and GUI share credential JSON formats and workspace leases. GUI imports can persist through encrypted OS storage; API sessions keep keys in memory. Exported credential JSON is explicitly plaintext.
+
+All **163 JavaScript tests** pass. Four Python integration scenarios pass against both the source and packaged Windows backends: collection with pause/resume and moved folders, stop/restart/forced-crash recovery, credential portability without dataset/history leakage, and workspace collision/path validation. These tests use local fixture data and synthetic keys, not live owner credentials. Direct Resume controls now appear in Jobs, Datasets, and run details. The updated Windows lifecycle/reliability CI must complete for this exact commit before its result is marked passed.
+
+The final local 0.3.0 installer and SDK wheel built successfully. The wheel installed into isolated test storage and controlled the packaged runtime. Final packaged API tests and the extraction/export diagnostic passed with zero integrity issues; checksums cover the installer, blockmap, and wheel. This is local evidence, not a completed 0.3.0 Windows CI lifecycle/soak result.

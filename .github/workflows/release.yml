@@ -35,6 +35,11 @@ jobs:
       - run: pnpm check
       - name: Generate release notes with every source and API-key link
         run: node scripts/release-notes.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test Python API with source backend
+        run: python -m unittest discover -s python/tests -v
       - run: pnpm test
       - run: pnpm audit --prod --audit-level=high
       - run: pnpm notices
@@ -43,6 +48,15 @@ jobs:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: pnpm exec electron-builder --win nsis --x64 --publish never --config.forceCodeSigning=true
+      - name: Test Python API with packaged Windows backend
+        env:
+          MAINE_SOURCE_TEST_APP: ${{ github.workspace }}/release/win-unpacked/Maine Source.exe
+        run: python -m unittest discover -s python/tests -v
+      - name: Build Python SDK wheel and checksums
+        run: |
+          python -m pip wheel ./python --no-deps --wheel-dir release
+          if ($LASTEXITCODE -ne 0) { throw 'Python wheel build failed' }
+          node scripts/checksums.mjs
       - name: Verify Windows signatures
         run: |
           Get-ChildItem release/*.exe | ForEach-Object {
@@ -54,6 +68,7 @@ jobs:
           name: maine-source-signed-candidate
           path: |
             release/*.exe
+            release/*.whl
             release/SHA256SUMS.txt
             release/RELEASE_NOTES.md
             THIRD-PARTY-NOTICES.txt

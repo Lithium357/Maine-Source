@@ -26,3 +26,9 @@ This is an alpha test plan, not a declaration of 1.0 readiness. Use public sampl
 Open a bug report with app version, Windows version, source, small public reproduction query, steps, expected/actual results, and whether the issue repeats. Do not include API keys, private datasets, unredacted logs, or personal paths. Report security concerns privately using the repository's configured security contact/reporting route.
 
 CI's installation/upgrade/uninstall test runs on a disposable Windows developer runner with external runtimes removed from PATH for the app test. It is useful evidence, but outside tests on ordinary consumer machines are still needed. No outside testers have been contacted automatically.
+
+## Python API and credential transfer
+
+Install the release wheel in an isolated Python environment and use the installed 0.3.0+ app as the backend. Collect a small public or local dataset, pause/resume it, close/reopen the client, resume saved progress, move it, and export it. Test another client/GUI against the same workspace: it must refuse a second writer. Check separate workspaces can run independently.
+
+Export synthetic/demo credentials from Settings, import the JSON on a second test profile/machine, and verify session-only versus remembered behavior across restart. Confirm unrelated keys remain unchanged and malformed/unknown-source bundles apply no changes. Treat exported JSON as plaintext and never attach real credential files to bug reports. Live provider checks with owner-entered keys remain separate from these fixture tests.

@@ -72,7 +72,14 @@ export class Collector {
     this.starting = true; try { return await fn(); } finally { this.starting = false; }
   }
   start(input) { return this.begin(() => this.startNew(input)); }
-  resume(id, limits) { return this.begin(() => this.resumeSaved(id, limits)); }
+  async resume(id, limits) {
+    if (this.active?.job.id === id && this.active.paused) {
+      if (limits) throw new Error('Resume this paused run without changing limits; stop it first to change total budgets');
+      this.active.paused = false; this.active.job.status = 'running'; this.active.wake?.();
+      await this.save(); this.emit(); return id;
+    }
+    return this.begin(() => this.resumeSaved(id, limits));
+  }
   async folder(id) {
     jobFolder(this.root, id);
     const job = this.jobs.find(j => j.id === id);
