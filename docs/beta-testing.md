@@ -9,8 +9,9 @@ This is an alpha test plan, not a declaration of 1.0 readiness. Use public sampl
 3. Export JSONL and a configured text format. Keep the adjacent originals folder and manifest together. Verify the dataset in a separate tool.
 4. Close/reopen the app. Confirm datasets, recipes, credentials (if explicitly remembered), and preferences survive.
 5. On a separate test run, stop partway through and Resume. Confirm saved records are preserved, total budgets still apply, and failed items are reported.
-6. Move storage to a new empty folder/drive. Confirm data copies successfully, the previous copy remains, and the chosen location survives restart.
-7. Upgrade from 0.1.5 with saved datasets. Confirm text/originals and preferences remain accessible. Uninstall and verify user datasets are retained. Reinstall and check discovery of that saved data.
+6. Choose a custom download parent in a recipe and collect a small dataset. Restart and verify its active path in Datasets. Change that dataset folder, check original hashes, resume, browse, and export. Confirm the old copy remains as a backup and another dataset stays in place. Disconnect an external drive: the app must report the unavailable folder rather than silently recreate it elsewhere.
+7. Move storage to a new empty folder/drive. Confirm data copies successfully, the previous copy remains, and the chosen location survives restart.
+8. Upgrade from 0.1.5 with saved datasets. Confirm text/originals and preferences remain accessible. Uninstall and verify user datasets are retained. Reinstall and check discovery of that saved data.
 
 ## Failure and usability checks
 

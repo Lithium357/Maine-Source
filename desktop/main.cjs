@@ -13,7 +13,7 @@ const respond = fn => async (event, ...args) => {
   if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== pathToFileURL(uiFile).href) throw new Error('Untrusted IPC sender');
   try { return { ok: true, value: await fn(...args) }; } catch (error) { return { ok: false, error: error.message || 'Operation failed' }; }
 };
-const snapshot = () => ({ ...state, jobs: collector.jobs, sourceCatalog: catalog.sources, presets: catalog.presets, widgetCatalog: catalog.widgets, licenseIds: policy.licenseIds, licenseLevels: policy.levels, credentialStatus: Object.fromEntries(catalog.sources.filter(s => s.key).map(s => [s.id, Boolean(keys[s.id])])), secureStorage: safeStorage.isEncryptionAvailable(), localFiles: localPaths.map(p => path.basename(p)), dataPath: storage.data, workspaceBusy, version: app.getVersion() });
+const snapshot = () => ({ ...state, jobs: collector.jobs.map(job => ({ ...job, directory: path.join(job.storageParent || storage.datasets, job.id) })), sourceCatalog: catalog.sources, presets: catalog.presets, widgetCatalog: catalog.widgets, licenseIds: policy.licenseIds, licenseLevels: policy.levels, credentialStatus: Object.fromEntries(catalog.sources.filter(s => s.key).map(s => [s.id, Boolean(keys[s.id])])), secureStorage: safeStorage.isEncryptionAvailable(), localFiles: localPaths.map(p => path.basename(p)), dataPath: storage.data, workspaceBusy, version: app.getVersion() });
 const emit = () => { if (window && !window.isDestroyed()) window.webContents.send('state:changed', snapshot()); };
 const save = () => atomicJSON(statePath(), state);
 async function workspaceOperation(fn) {
@@ -101,7 +101,22 @@ else app.whenReady().then(async () => {
     if (!choice.canceled) { await collector.exportTo(id, choice.filePath, format, state.textOutput); return 'Dataset, original files, and companion manifest exported.'; }
     return 'Export canceled.';
   })));
-  const folder = async id => { if (!collector.jobs.some(j => j.id === id)) throw new Error('Dataset not found'); datasets.jobFolder(storage.datasets, id); return datasets.containedFile(storage.datasets, id); };
+  const folder = id => collector.folder(id);
+  ipcMain.handle('download:choose', respond(async () => {
+    const choice = await dialog.showOpenDialog(window, { title: 'Choose a download folder for this recipe', properties: ['openDirectory', 'createDirectory'] });
+    return choice.canceled ? null : choice.filePaths[0];
+  }));
+  ipcMain.handle('dataset:open', respond(async ({ id }) => {
+    const error = await shell.openPath(await folder(id)); if (error) throw new Error(error);
+  }));
+  ipcMain.handle('dataset:move', respond(({ id }) => workspaceOperation(async () => {
+    if (collector.active) throw new Error('Stop collection before changing a dataset folder');
+    await folder(id);
+    const choice = await dialog.showOpenDialog(window, { title: 'Choose a new parent folder for this dataset', properties: ['openDirectory', 'createDirectory'] });
+    if (choice.canceled) return 'Dataset folder unchanged.';
+    const destination = await collector.moveDataset(id, choice.filePaths[0]);
+    return `Dataset copied, verified, and switched to ${destination}. The previous folder is kept as a backup.`;
+  })));
   ipcMain.handle('dataset:browse', respond(async ({ id, ...options }) => datasets.browseRecords(await folder(id), options)));
   ipcMain.handle('dataset:record', respond(async ({ id, file, offset }) => datasets.recordDetail(await folder(id), file, offset)));
   ipcMain.handle('dataset:validate', respond(({ id }) => workspaceOperation(async () => datasets.validateDataset(await folder(id)))));

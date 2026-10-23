@@ -1,5 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const channels = new Set(['state:get', 'output:save', 'sources:save', 'dashboard:save', 'recipe:save', 'recipe:delete', 'credential:save', 'credential:test', 'local:pick', 'job:start', 'job:resume', 'storage:space', 'storage:choose', 'dataset:browse', 'dataset:record', 'dataset:validate', 'dataset:delete', 'job:pause', 'job:stop', 'dataset:export', 'attachment:show', 'link:open', 'data:open']);
+const channels = new Set(['state:get', 'output:save', 'sources:save', 'dashboard:save', 'recipe:save', 'recipe:delete', 'credential:save', 'credential:test', 'local:pick', 'job:start', 'job:resume', 'storage:space', 'storage:choose', 'download:choose', 'dataset:move', 'dataset:open', 'dataset:browse', 'dataset:record', 'dataset:validate', 'dataset:delete', 'job:pause', 'job:stop', 'dataset:export', 'attachment:show', 'link:open', 'data:open']);
 contextBridge.exposeInMainWorld('maine', {
   call: async (channel, payload) => {
     if (!channels.has(channel)) throw new Error('Unknown action');

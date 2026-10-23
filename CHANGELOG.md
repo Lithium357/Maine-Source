@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 — per-dataset download folders
+
+- Choose and remember a download folder for each recipe; new runs create an isolated dataset subfolder there.
+- Open or change an individual dataset’s folder, with verified copying and the original retained as a backup.
+- Resume, browse, validate, export, and delete use each dataset’s active location after restart.
+- Refuse moves during collection, existing destinations, nested destinations, filesystem links, and insufficient free space. Portable export manifests omit local download paths.
+
 ## 0.2.2 — unsigned distribution preparation
 
 - Disclose unsigned Windows distribution and the absence of an independent security audit in the README, installer notice, and app settings.

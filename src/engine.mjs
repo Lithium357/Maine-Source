@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, writeFile, rename, readFile, readdir, open, copyFile, unlink, appendFile, rm, stat, lstat } from 'node:fs/promises';
+import { mkdir, writeFile, rename, readFile, readdir, open, copyFile, unlink, appendFile, rm, stat, lstat, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
@@ -12,7 +12,7 @@ import { evaluate } from './policy.mjs';
 import { HttpClient, redactSecrets } from './http.mjs';
 import { materialize } from './content.mjs';
 import { defaultTextOutput, validateTextOutput } from './output-options.mjs';
-import { ensureFreeSpace } from './storage.mjs';
+import { ensureFreeSpace, relocateDataset } from './storage.mjs';
 import { jobFolder, recordFiles, readRecord, containedFile } from './datasets.mjs';
 import { attachmentPath, renderText, transformText, encodeText } from './text-output.mjs';
 
@@ -32,6 +32,7 @@ export function validateRecipe(recipe) {
   if (![limits.minutes, limits.megabytes, limits.files].some(v => Number(v) > 0)) throw new Error('Set at least one stop condition');
   if (limits.files && !Number.isInteger(Number(limits.files))) throw new Error('Document count must be a whole number');
   if (!Number.isFinite(Number(recipe.minLength)) || recipe.minLength < 0) throw new Error('Minimum length must be nonnegative');
+  if (recipe.downloadDirectory !== undefined && recipe.downloadDirectory !== '' && (typeof recipe.downloadDirectory !== 'string' || !path.isAbsolute(recipe.downloadDirectory))) throw new Error('Download folder must be absolute');
   if (JSON.stringify(recipe).length > 200000) throw new Error('Recipe is too large');
   return structuredClone(recipe);
 }
@@ -72,14 +73,34 @@ export class Collector {
   }
   start(input) { return this.begin(() => this.startNew(input)); }
   resume(id, limits) { return this.begin(() => this.resumeSaved(id, limits)); }
+  async folder(id) {
+    jobFolder(this.root, id);
+    const job = this.jobs.find(j => j.id === id);
+    if (!job) throw new Error('Dataset not found');
+    const parent = job.storageParent || this.root;
+    if (job.storageParent && (!path.isAbsolute(parent) || path.relative(path.resolve(parent), await realpath(parent)))) throw new Error('Dataset parent folder has changed or is linked');
+    return containedFile(parent, id);
+  }
+  async moveDataset(id, parent) {
+    return this.begin(async () => {
+      const job = this.jobs.find(j => j.id === id);
+      if (!job) throw new Error('Dataset not found');
+      const original = job.storageParent, originalRecipe = job.recipe;
+      const moved = await relocateDataset(await this.folder(id), parent, id, this.checkSpace);
+      job.storageParent = moved.storageParent; job.recipe = { ...job.recipe, downloadDirectory: moved.storageParent };
+      try { await this.save(); } catch (error) { job.storageParent = original; job.recipe = originalRecipe; throw error; }
+      this.emit(); return moved.destination;
+    });
+  }
   async startNew(input) {
     if (this.active) throw new Error('A collection is already active. Stop it before starting another.');
     const recipe = validateRecipe(input);
-    await this.checkSpace(this.root);
-    const job = { id: randomUUID(), name: recipe.name, recipe, status: 'running', startedAt: new Date().toISOString(), accepted: 0, rejected: 0, bytes: 0, seen: 0, errors: 0, counts: {}, licenses: {}, outcomes: {}, samples: [], events: [], activity: [], reason: '' };
+    const storageParent = recipe.downloadDirectory ? await realpath(recipe.downloadDirectory) : undefined;
+    await this.checkSpace(storageParent || this.root);
+    const job = { id: randomUUID(), ...(storageParent ? { storageParent } : {}), name: recipe.name, recipe, status: 'running', startedAt: new Date().toISOString(), accepted: 0, rejected: 0, bytes: 0, seen: 0, errors: 0, counts: {}, licenses: {}, outcomes: {}, samples: [], events: [], activity: [], reason: '' };
     const active = { job, controller: new AbortController(), paused: false, paths: [...this.localPaths], elapsedBefore: 0, sessionStarted: Date.now() };
     this.active = active; this.jobs.unshift(job);
-    try { await mkdir(path.join(this.root, job.id, 'records'), { recursive: true }); await this.save(); }
+    try { const directory = jobFolder(storageParent || this.root, job.id); await mkdir(directory); await mkdir(path.join(directory, 'records')); await this.save(); }
     catch (error) { this.active = null; this.jobs = this.jobs.filter(j => j.id !== job.id); throw error; }
     this.emit();
     this.running = this.run(active).catch(async error => { job.status = 'failed'; job.reason = `Could not save collection state: ${error.message}`; this.active = null; this.emit(); await this.save().catch(() => {}); });
@@ -92,7 +113,7 @@ export class Collector {
     const recipe = validateRecipe({ ...job.recipe, ...(limits ? { limits } : {}) });
     if (recipe.sourceIds.includes('local') && !this.localPaths.length) throw new Error('Reselect the original local files in Settings before resuming');
     jobFolder(this.root, id);
-    const root = await containedFile(this.root, id), saved = [];
+    const root = await this.folder(id), saved = [];
     // Committed record files are authoritative if the app crashed before jobs.json was saved.
     const files = await recordFiles(root);
     if (files.some((file, i) => Number(file.slice(0, 8)) !== i + 1)) throw new Error('Dataset record sequence is damaged; restore missing records before resuming');
@@ -111,7 +132,7 @@ export class Collector {
       const license = record.rights?.expression || 'Unknown'; job.licenses[license] = (job.licenses[license] || 0) + 1;
     }
     if (recipe.limits.files > 0 && job.accepted >= recipe.limits.files || recipe.limits.megabytes > 0 && job.bytes >= recipe.limits.megabytes * 1048576 || recipe.limits.minutes > 0 && (job.elapsedMs || 0) >= recipe.limits.minutes * 60000) throw new Error('This run reached its limit. Increase the total budget to continue.');
-    await this.checkSpace(this.root);
+    await this.checkSpace(root);
     job.recipe = recipe; job.reason = ''; job.status = 'running'; job.priorErrors = (job.priorErrors || 0) + job.errors; job.errors = 0; delete job.endedAt;
     const active = { job, controller: new AbortController(), paused: false, paths: [...this.localPaths], elapsedBefore: job.elapsedMs || 0, sessionStarted: Date.now(), saved };
     this.active = active; try { await this.save(); } catch (error) { job.status = 'interrupted'; this.active = null; throw error; } this.emit();
@@ -155,7 +176,7 @@ export class Collector {
     }
     const seen = new Set((active.saved || []).map(item => item.record.hash));
     const completed = new Set((active.saved || []).map(item => item.record.recoveryKey).filter(Boolean));
-    const recoveryRoot = jobFolder(this.root, job.id), journal = path.join(recoveryRoot, 'processed.jsonl');
+    const recoveryRoot = await this.folder(job.id), journal = path.join(recoveryRoot, 'processed.jsonl');
     try { const journalFile = await containedFile(recoveryRoot, 'processed.jsonl'); const lines = createInterface({ input: createReadStream(journalFile), crlfDelay: Infinity }); for await (const line of lines) if (/^[a-f0-9]{64}$/.test(line)) completed.add(line); } catch (e) { if (e.code !== 'ENOENT') { clearTimeout(timer); throw e; } }
     const processed = async key => { await appendFile(journal, key + '\n', { mode: 0o600 }); };
     const failedSources = new Set();
@@ -212,19 +233,19 @@ export class Collector {
           const bytes = Buffer.byteLength(serialized) + payloads.reduce((sum, p) => sum + p.data.length, 0);
           if (Number(recipe.limits.megabytes) > 0 && job.bytes + bytes > recipe.limits.megabytes * 1024 * 1024) { job.reason = 'Storage limit reached; next record would exceed budget'; controller.abort(); break; }
           if (controller.signal.aborted || Date.now() >= deadline) { job.reason ||= 'Wall-clock time limit reached'; break; }
-          await this.checkSpace(this.root, bytes);
+          await this.checkSpace(recoveryRoot, bytes);
           await mkdir(path.join(recoveryRoot, 'assets'), { recursive: true });
           await containedFile(recoveryRoot, 'assets'); await containedFile(recoveryRoot, 'records');
           // Only the next, uncommitted record may have leftovers from an interrupted write.
           await rm(path.join(recoveryRoot, 'assets', sequence), { recursive: true, force: true });
           await unlink(path.join(recoveryRoot, 'records', `${sequence}.json.tmp`)).catch(e => { if (e.code !== 'ENOENT') throw e; });
           for (const payload of payloads) {
-            const assetPath = path.join(this.root, job.id, payload.details.path);
+            const assetPath = path.join(recoveryRoot, payload.details.path);
             await mkdir(path.dirname(assetPath), { recursive: true });
             await writeFile(`${assetPath}.tmp`, payload.data, { flag: 'wx', mode: 0o600 });
             await rename(`${assetPath}.tmp`, assetPath);
           }
-          const recordPath = path.join(this.root, job.id, 'records', `${sequence}.json`);
+          const recordPath = path.join(recoveryRoot, 'records', `${sequence}.json`);
           const tempPath = `${recordPath}.tmp`;
           await writeFile(tempPath, serialized, { flag: 'wx', mode: 0o600 });
           await rename(tempPath, recordPath);
@@ -248,7 +269,7 @@ export class Collector {
       for (const { iterator } of iterators) await iterator.return?.().catch(() => {});
       job.elapsedMs = active.elapsedBefore + Date.now() - active.sessionStarted;
       job.endedAt = new Date().toISOString(); this.active = null;
-      await atomicJSON(path.join(this.root, job.id, 'manifest.json'), { ...job, samples: undefined, events: undefined });
+      await atomicJSON(path.join(recoveryRoot, 'manifest.json'), { ...job, samples: undefined, events: undefined });
       await this.save(); this.emit();
     }
   }
@@ -260,7 +281,7 @@ export class Collector {
     if (!['jsonl', 'text'].includes(format)) throw new Error('Invalid export format');
     const settings = validateTextOutput(textOutput);
     jobFolder(this.root, id);
-    const runRoot = await containedFile(this.root, id);
+    const runRoot = await this.folder(id);
     const originalsOnly = format === 'text' && settings.representation === 'originals';
     const structured = format === 'jsonl' || originalsOnly;
     const compressed = !structured && settings.compression === 'gzip';
@@ -299,6 +320,8 @@ export class Collector {
       await pipeline(Readable.from(chunks()), ...(compressed ? [createGzip()] : []), createWriteStream(temp, { flags: 'wx', mode: 0o600 }));
       await rename(temp, destination);
     } catch (error) { await unlink(temp).catch(() => {}); throw error; }
-    await atomicJSON(`${destination}.manifest.json`, { schema: 'maine-source.dataset.v1', exportedAt: new Date().toISOString(), format, ...job, samples: undefined, events: undefined, exportedRecords, skippedRecords, textOutput: structured ? { representation: originalsOnly ? 'originals' : 'records', encoding: 'utf8', bom: 'never', normalization: 'none', newlines: 'lf', compression: 'none' } : settings });
+    const { storageParent: ignoredParent, recipe: savedRecipe, ...portableJob } = job;
+    const { downloadDirectory: ignoredDirectory, ...portableRecipe } = savedRecipe || {};
+    await atomicJSON(`${destination}.manifest.json`, { schema: 'maine-source.dataset.v1', exportedAt: new Date().toISOString(), format, ...portableJob, recipe: portableRecipe, samples: undefined, events: undefined, exportedRecords, skippedRecords, textOutput: structured ? { representation: originalsOnly ? 'originals' : 'records', encoding: 'utf8', bom: 'never', normalization: 'none', newlines: 'lf', compression: 'none' } : settings });
   }
 }

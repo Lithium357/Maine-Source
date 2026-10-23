@@ -1,6 +1,8 @@
 import path from 'node:path';
-import { mkdir, stat, cp, rename, statfs, readdir, realpath } from 'node:fs/promises';
+import { mkdir, stat, lstat, cp, rename, statfs, readdir, realpath } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 
 async function exists(directory) {
   try { await stat(directory); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
@@ -47,4 +49,34 @@ export async function relocateStorage(paths, parent) {
   await cp(source, staging, { recursive: true, force: false, errorOnExist: true });
   await rename(staging, destination);
   return { ...paths, data: destination, datasets: path.join(destination, 'datasets'), exports: path.join(destination, 'exports') };
+}
+
+export async function relocateDataset(sourceDirectory, parent, id, checkSpace = ensureFreeSpace) {
+  if (!path.isAbsolute(parent) || !/^[a-zA-Z0-9_-]{1,80}$/.test(id)) throw new Error('Choose an absolute dataset folder');
+  if ((await lstat(sourceDirectory)).isSymbolicLink()) throw new Error('Cannot move a linked dataset');
+  const source = await realpath(sourceDirectory), storageParent = await realpath(parent), destination = path.join(storageParent, id);
+  const relative = path.relative(source, destination);
+  if (!relative || !relative.startsWith('..') && !path.isAbsolute(relative)) throw new Error('Choose a folder outside the current dataset');
+  if (await exists(destination)) throw new Error('Destination already contains this dataset. Choose another folder; existing files will not be overwritten.');
+  const files = []; let bytes = 0;
+  async function inspect(directory, prefix = '') {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) throw new Error('Dataset contains a filesystem link; copy stopped');
+      const name = path.join(prefix, entry.name), filename = path.join(source, name);
+      if (entry.isDirectory()) await inspect(filename, name);
+      else if (entry.isFile()) { files.push(name); bytes += (await stat(filename)).size; }
+      else throw new Error('Dataset contains an unsupported file type');
+    }
+  }
+  await inspect(source); await checkSpace(storageParent, bytes);
+  const staging = path.join(storageParent, `.maine-source-dataset-${randomUUID()}`);
+  // Keep the old location intact until the complete verified copy is selected.
+  await cp(source, staging, { recursive: true, force: false, errorOnExist: true, filter: async filename => {
+    if ((await lstat(filename)).isSymbolicLink()) throw new Error('Dataset contains a filesystem link; copy stopped');
+    return true;
+  } });
+  const hash = async filename => { const digest = createHash('sha256'); for await (const part of createReadStream(filename)) digest.update(part); return digest.digest('hex'); };
+  for (const file of files) if (await hash(path.join(source, file)) !== await hash(path.join(staging, file))) throw new Error('Dataset copy verification failed; original folder remains active');
+  await rename(staging, destination);
+  return { storageParent, destination };
 }
