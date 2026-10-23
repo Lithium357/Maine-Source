@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile, readdir, symlink, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { Collector } from '../src/engine.mjs';
 import { defaultRecipe } from '../src/catalog.mjs';
@@ -111,4 +111,38 @@ test('relocation preserves originals, refuses nested/existing destinations, and 
   await assert.rejects(relocateStorage(paths, destination), /already contains/);
   await assert.rejects(relocateStorage(paths, paths.data), /outside/);
   await assert.rejects(ensureFreeSpace(parent, Number.MAX_SAFE_INTEGER), /free disk/);
+});
+test('resume cannot remove files through an assets junction outside its dataset', async () => {
+  const { root, collector } = await setup(async function* () { throw new Error('Outage'); }); const id = await collector.start(recipe); await collector.running;
+  const outside = path.join(root, 'outside'); await mkdir(path.join(outside, '00000001'), { recursive: true }); await writeFile(path.join(outside, '00000001', 'keep.txt'), 'preserve');
+  await symlink(outside, path.join(root, id, 'assets'), 'junction');
+  collector.adapters.nvd = async function* () { yield item(1); }; await collector.resume(id); await collector.running;
+  assert.equal(collector.jobs[0].accepted, 0); assert.match(collector.jobs[0].reason, /outside/);
+  assert.equal(await readFile(path.join(outside, '00000001/keep.txt'), 'utf8'), 'preserve');
+});
+test('export rejects originals redirected outside the dataset', async () => {
+  const { root, collector } = await setup(async function* () { yield item(1); }); const id = await collector.start(recipe); await collector.running;
+  const run = path.join(root, id), outside = path.join(root, 'outside'); await mkdir(outside);
+  await rename(path.join(run, 'assets'), path.join(outside, 'assets'));
+  await symlink(path.join(outside, 'assets'), path.join(run, 'assets'), 'junction');
+  await assert.rejects(collector.exportTo(id, path.join(root, 'unsafe.jsonl')), /outside/);
+});
+test('validation reports structurally corrupted records instead of accepting them', async () => {
+  const { root, collector } = await setup(async function* () { yield item(1); }); const id = await collector.start(recipe); await collector.running;
+  await writeFile(path.join(root, id, 'records/00000001.json'), '{"text":{"bad":"object"}}');
+  assert.match((await validateDataset(path.join(root, id))).issues[0], /Invalid saved record/);
+});
+test('export cannot write through a companion-assets junction', async () => {
+  const { root, collector } = await setup(async function* () { yield item(1); }); const id = await collector.start(recipe); await collector.running;
+  const outside = path.join(root, 'external-destination'); await mkdir(outside);
+  const destination = path.join(root, 'output.jsonl'); await symlink(outside, destination + '.assets', 'junction');
+  await assert.rejects(collector.exportTo(id, destination), /filesystem link/);
+  assert.deepEqual(await readdir(outside), []);
+});
+test('export rejects nested destination junctions before creating outside directories', async () => {
+  const { root, collector } = await setup(async function* () { yield item(1); }); const id = await collector.start(recipe); await collector.running;
+  const outside = path.join(root, 'outside-nested'); await mkdir(outside);
+  const destination = path.join(root, 'output.jsonl'); await mkdir(destination + '.assets'); await symlink(outside, path.join(destination + '.assets', 'assets'), 'junction');
+  await assert.rejects(collector.exportTo(id, destination), /filesystem link/);
+  assert.deepEqual(await readdir(outside), []);
 });

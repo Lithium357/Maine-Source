@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, writeFile, rename, readFile, readdir, open, copyFile, unlink, appendFile, rm, stat } from 'node:fs/promises';
+import { mkdir, writeFile, rename, readFile, readdir, open, copyFile, unlink, appendFile, rm, stat, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
@@ -13,7 +13,7 @@ import { HttpClient, redactSecrets } from './http.mjs';
 import { materialize } from './content.mjs';
 import { defaultTextOutput, validateTextOutput } from './output-options.mjs';
 import { ensureFreeSpace } from './storage.mjs';
-import { jobFolder, recordFiles, readRecord } from './datasets.mjs';
+import { jobFolder, recordFiles, readRecord, containedFile } from './datasets.mjs';
 import { attachmentPath, renderText, transformText, encodeText } from './text-output.mjs';
 
 export function validateRecipe(recipe) {
@@ -91,7 +91,8 @@ export class Collector {
     if (!job || !['interrupted', 'stopped', 'failed', 'completed_with_errors'].includes(job.status)) throw new Error('This run cannot be resumed');
     const recipe = validateRecipe({ ...job.recipe, ...(limits ? { limits } : {}) });
     if (recipe.sourceIds.includes('local') && !this.localPaths.length) throw new Error('Reselect the original local files in Settings before resuming');
-    const root = jobFolder(this.root, id), saved = [];
+    jobFolder(this.root, id);
+    const root = await containedFile(this.root, id), saved = [];
     // Committed record files are authoritative if the app crashed before jobs.json was saved.
     const files = await recordFiles(root);
     if (files.some((file, i) => Number(file.slice(0, 8)) !== i + 1)) throw new Error('Dataset record sequence is damaged; restore missing records before resuming');
@@ -101,7 +102,8 @@ export class Collector {
       saved.push({ record: { hash: record.hash, recoveryKey: record.recoveryKey } });
       job.bytes += (await stat(path.join(root, 'records', file))).size;
       for (const attachment of record.attachments || []) {
-        const filename = attachmentPath(root, attachment.path);
+        attachmentPath(root, attachment.path);
+        const filename = await containedFile(root, attachment.path);
         if ((await stat(filename)).size !== attachment.bytes) throw new Error('Saved original is missing or damaged; validate the dataset before resuming');
         job.bytes += attachment.bytes;
       }
@@ -154,7 +156,7 @@ export class Collector {
     const seen = new Set((active.saved || []).map(item => item.record.hash));
     const completed = new Set((active.saved || []).map(item => item.record.recoveryKey).filter(Boolean));
     const recoveryRoot = jobFolder(this.root, job.id), journal = path.join(recoveryRoot, 'processed.jsonl');
-    try { const lines = createInterface({ input: createReadStream(journal), crlfDelay: Infinity }); for await (const line of lines) if (/^[a-f0-9]{64}$/.test(line)) completed.add(line); } catch (e) { if (e.code !== 'ENOENT') { clearTimeout(timer); throw e; } }
+    try { const journalFile = await containedFile(recoveryRoot, 'processed.jsonl'); const lines = createInterface({ input: createReadStream(journalFile), crlfDelay: Infinity }); for await (const line of lines) if (/^[a-f0-9]{64}$/.test(line)) completed.add(line); } catch (e) { if (e.code !== 'ENOENT') { clearTimeout(timer); throw e; } }
     const processed = async key => { await appendFile(journal, key + '\n', { mode: 0o600 }); };
     const failedSources = new Set();
     job.checkpoints ||= {};
@@ -211,6 +213,8 @@ export class Collector {
           if (Number(recipe.limits.megabytes) > 0 && job.bytes + bytes > recipe.limits.megabytes * 1024 * 1024) { job.reason = 'Storage limit reached; next record would exceed budget'; controller.abort(); break; }
           if (controller.signal.aborted || Date.now() >= deadline) { job.reason ||= 'Wall-clock time limit reached'; break; }
           await this.checkSpace(this.root, bytes);
+          await mkdir(path.join(recoveryRoot, 'assets'), { recursive: true });
+          await containedFile(recoveryRoot, 'assets'); await containedFile(recoveryRoot, 'records');
           // Only the next, uncommitted record may have leftovers from an interrupted write.
           await rm(path.join(recoveryRoot, 'assets', sequence), { recursive: true, force: true });
           await unlink(path.join(recoveryRoot, 'records', `${sequence}.json.tmp`)).catch(e => { if (e.code !== 'ENOENT') throw e; });
@@ -255,21 +259,32 @@ export class Collector {
     if (!job || this.active?.job.id === id) throw new Error('Finish or stop this run before exporting');
     if (!['jsonl', 'text'].includes(format)) throw new Error('Invalid export format');
     const settings = validateTextOutput(textOutput);
-    const runRoot = path.join(this.root, id), directory = path.join(runRoot, 'records');
+    jobFolder(this.root, id);
+    const runRoot = await containedFile(this.root, id);
     const originalsOnly = format === 'text' && settings.representation === 'originals';
     const structured = format === 'jsonl' || originalsOnly;
     const compressed = !structured && settings.compression === 'gzip';
     let exportedRecords = 0, skippedRecords = 0;
     const chunks = async function* () {
-      for (const file of (await readdir(directory)).filter(f => f.endsWith('.json')).sort()) {
-        const r = JSON.parse(await readFile(path.join(directory, file), 'utf8'));
+      for (const file of await recordFiles(runRoot)) {
+        const r = await readRecord(runRoot, file);
         const text = structured ? null : await renderText(r, settings, runRoot);
         if (!structured && text === null) { skippedRecords++; continue; }
         for (const attachment of r.attachments || []) {
           const relative = attachment.path;
-          const source = attachmentPath(runRoot, relative);
-          const output = path.join(`${destination}.assets`, relative);
-          await mkdir(path.dirname(output), { recursive: true }); await copyFile(source, output);
+          attachmentPath(runRoot, relative);
+          const source = await containedFile(runRoot, relative);
+          const assetRoot = `${destination}.assets`, output = path.join(assetRoot, relative);
+          await mkdir(assetRoot, { recursive: true });
+          if ((await lstat(assetRoot)).isSymbolicLink()) throw new Error('Export assets folder must not be a filesystem link');
+          let outputDirectory = assetRoot;
+          for (const part of relative.split('/').slice(0, -1)) {
+            outputDirectory = path.join(outputDirectory, part);
+            try { await mkdir(outputDirectory); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+            if ((await lstat(outputDirectory)).isSymbolicLink()) throw new Error('Export assets directory must not be a filesystem link');
+          }
+          try { if ((await lstat(output)).isSymbolicLink()) throw new Error('Export original must not overwrite a filesystem link'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+          await copyFile(source, output);
           attachment.path = `${path.basename(destination)}.assets/${relative}`;
         }
         if (originalsOnly) delete r.text;

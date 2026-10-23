@@ -13,10 +13,12 @@ export async function containedFile(root, relative) {
   if (!inside || inside.startsWith('..') || path.isAbsolute(inside)) throw new Error('File is outside this dataset');
   return file;
 }
-export async function recordFiles(root) { return (await readdir(path.join(root, 'records'))).filter(f => /^[0-9]{8}\.json$/.test(f)).sort(); }
+export async function recordFiles(root) { return (await readdir(await containedFile(root, 'records'))).filter(f => /^[0-9]{8}\.json$/.test(f)).sort(); }
 export async function readRecord(root, file) {
   if (!/^[0-9]{8}\.json$/.test(file)) throw new Error('Invalid record filename');
-  return JSON.parse(await readFile(await containedFile(root, `records/${file}`), 'utf8'));
+  const record = JSON.parse(await readFile(await containedFile(root, `records/${file}`), 'utf8'));
+  if (!record || typeof record !== 'object' || Array.isArray(record) || typeof record.text !== 'string' || record.attachments !== undefined && (!Array.isArray(record.attachments) || record.attachments.some(a => !a || typeof a !== 'object' || typeof a.path !== 'string'))) throw new Error('Invalid saved record structure');
+  return record;
 }
 export async function browseRecords(root, { query = '', source = '', license = '', status = '', offset = 0, limit = 25 } = {}) {
   if (![query, source, license, status].every(s => typeof s === 'string' && s.length <= 1000) || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid dataset search');

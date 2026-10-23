@@ -2,6 +2,7 @@
 
 ## 0.2.1 — 2026-10-23 (alpha)
 
+- Reject linked/tampered dataset and export paths before reading, cleaning up, or writing originals; report structurally corrupt records.
 - Repair Open Library public-access searches and ignore private archive files.
 - Retry bounded transient GET transport failures; cancellation still interrupts backoff.
 - Try alternate OpenAlex paper locations, prefer major public repositories, and retain the successful copy's URL and license.

@@ -57,3 +57,9 @@ The `Signed release candidate` workflow is manually triggered for an existing ve
 Source references: [Open Library access fields](https://openlibrary.org/search/howto/more), [OpenAlex location-specific copies/licenses](https://help.openalex.org/data/locations/), [arXiv API](https://info.arxiv.org/help/api/user-manual.html). Public vulnerability reporting still requires the owner's repository administration setting; see [GitHub's instructions](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository).
 
 The same CI run's two-hour replay job is still running. Do not infer its success from the completed installer job. Signing and authenticated provider checks still require owner-supplied credentials; no outside beta users were contacted. Production dependency audit on 2026-10-23 again reported zero known vulnerabilities.
+
+## Filesystem hardening follow-up
+
+A second implementation review found that manually tampered dataset folders could redirect recovery or export through junctions/symbolic links. Recovery now verifies the resolved dataset, record, journal, and assets locations before using them. Exports validate original paths, reject linked companion folders/files, and create destination directories one component at a time so a nested link cannot create files outside the chosen destination. LaTeX export uses the same containment checks. Invalid saved record structures are reported as integrity problems.
+
+All **150 automated tests pass**, including real temporary Windows junction regressions for recovery, source originals, companion folders, and nested output directories. This is a maintainer implementation review, not an independent third-party security audit. The disposable Windows lifecycle success above refers to commit `72f62ff`; later hardening commits run the same checks again.

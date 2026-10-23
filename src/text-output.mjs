@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { archiveText } from './content.mjs';
 import { validateTextOutput } from './output-options.mjs';
+import { containedFile } from './datasets.mjs';
 
 export function transformText(text, options) {
   const settings = validateTextOutput(options);
@@ -35,7 +36,8 @@ export async function latexSources(record, runRoot) {
   for (const file of record.attachments || []) {
     const name = file.filename || '';
     if (!/\.(tex|gz|tgz|tar|zip)$/i.test(name)) continue;
-    const data = await readFile(attachmentPath(runRoot, file.path));
+    attachmentPath(runRoot, file.path);
+    const data = await readFile(await containedFile(runRoot, file.path));
     let members;
     if (/\.tex$/i.test(name)) members = [{ name, text: decodeSource(data) }];
     else if (/\.zip$/i.test(name)) {
