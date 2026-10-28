@@ -13,7 +13,7 @@ import { HttpClient, redactSecrets } from './http.mjs';
 import { materialize } from './content.mjs';
 import { defaultTextOutput, validateTextOutput } from './output-options.mjs';
 import { ensureFreeSpace, relocateDataset } from './storage.mjs';
-import { jobFolder, recordFiles, readRecord, containedFile } from './datasets.mjs';
+import { jobFolder, recordFiles, readRecord, containedFile, inspectForResume } from './datasets.mjs';
 import { attachmentPath, renderText, transformText, encodeText } from './text-output.mjs';
 
 export function validateRecipe(recipe) {
@@ -69,7 +69,7 @@ export class Collector {
   }
   async begin(fn) {
     if (this.active || this.starting) throw new Error('A collection is already active. Stop it before starting another.');
-    this.starting = true; try { return await fn(); } finally { this.starting = false; }
+    this.starting = true; try { return await fn(); } finally { this.starting = false; this.emit(); }
   }
   start(input) { return this.begin(() => this.startNew(input)); }
   async resume(id, limits) {
@@ -120,28 +120,23 @@ export class Collector {
     const recipe = validateRecipe({ ...job.recipe, ...(limits ? { limits } : {}) });
     if (recipe.sourceIds.includes('local') && !this.localPaths.length) throw new Error('Reselect the original local files in Settings before resuming');
     jobFolder(this.root, id);
-    const root = await this.folder(id), saved = [];
-    // Committed record files are authoritative if the app crashed before jobs.json was saved.
-    const files = await recordFiles(root);
-    if (files.some((file, i) => Number(file.slice(0, 8)) !== i + 1)) throw new Error('Dataset record sequence is damaged; restore missing records before resuming');
-    job.accepted = files.length; job.bytes = 0; job.counts = {}; job.licenses = {};
-    for (const file of files) {
-      const record = await readRecord(root, file);
-      saved.push({ record: { hash: record.hash, recoveryKey: record.recoveryKey } });
-      job.bytes += (await stat(path.join(root, 'records', file))).size;
-      for (const attachment of record.attachments || []) {
-        attachmentPath(root, attachment.path);
-        const filename = await containedFile(root, attachment.path);
-        if ((await stat(filename)).size !== attachment.bytes) throw new Error('Saved original is missing or damaged; validate the dataset before resuming');
-        job.bytes += attachment.bytes;
-      }
-      job.counts[record.source] = (job.counts[record.source] || 0) + 1;
-      const license = record.rights?.expression || 'Unknown'; job.licenses[license] = (job.licenses[license] || 0) + 1;
-    }
-    if (recipe.limits.files > 0 && job.accepted >= recipe.limits.files || recipe.limits.megabytes > 0 && job.bytes >= recipe.limits.megabytes * 1048576 || recipe.limits.minutes > 0 && (job.elapsedMs || 0) >= recipe.limits.minutes * 60000) throw new Error('This run reached its limit. Increase the total budget to continue.');
+    const root = await this.folder(id);
+    // Inspect without changing history counters until the entire saved set passes.
+    let report;
+    try { report = await inspectForResume(root, { highWater: Math.max(job.lastSequence || 0, job.accepted || 0), onProgress: progress => { job.recoveryProgress = progress; this.emit(); } }); }
+    finally { delete job.recoveryProgress; this.emit(); }
+    if (recipe.limits.files > 0 && report.accepted >= recipe.limits.files || recipe.limits.megabytes > 0 && report.bytes >= recipe.limits.megabytes * 1048576 || recipe.limits.minutes > 0 && (job.elapsedMs || 0) >= recipe.limits.minutes * 60000) throw new Error('This run reached its limit. Increase the total budget to continue.');
     await this.checkSpace(root);
+    if (report.lastSequence >= 99999999) throw new Error('This dataset reached the maximum supported record index');
+    const replay = report.gaps.length && JSON.stringify(report.gaps) !== JSON.stringify(job.recoveryGaps || []);
+    if (replay) {
+      this.log(job, 'warning', `Missing saved record slots detected (${report.gaps.slice(0, 5).map(([a, b]) => a === b ? a : `${a}–${b}`).join(', ')}). Existing records, checkpoints, and processed-item history are preserved. Missing or quarantined items are not automatically restored; new records use indices above ${report.lastSequence}.`);
+    }
+    job.recoveryGaps = report.gaps;
+    Object.assign(job, { accepted: report.accepted, bytes: report.bytes, counts: report.counts, licenses: report.licenses, lastSequence: report.lastSequence });
+    const saved = report.saved;
     job.recipe = recipe; job.reason = ''; job.status = 'running'; job.priorErrors = (job.priorErrors || 0) + job.errors; job.errors = 0; delete job.endedAt;
-    const active = { job, controller: new AbortController(), paused: false, paths: [...this.localPaths], elapsedBefore: job.elapsedMs || 0, sessionStarted: Date.now(), saved };
+    const active = { job, controller: new AbortController(), paused: false, paths: [...this.localPaths], elapsedBefore: job.elapsedMs || 0, sessionStarted: Date.now(), saved, nextSequence: report.lastSequence + 1 };
     this.active = active; try { await this.save(); } catch (error) { job.status = 'interrupted'; this.active = null; throw error; } this.emit();
     this.running = this.run(active).catch(async error => { job.status = 'failed'; job.reason = `Could not save collection state: ${error.message}`; this.active = null; this.emit(); await this.save().catch(() => {}); });
     return id;
@@ -217,7 +212,9 @@ export class Collector {
             failedSources.add(source); job.errors++; this.log(job, 'error', `${next.value.title || next.value.id}: ${error.message}`.replace(/(api_key|apiKey|token|key)=[^&\s]+/gi, '$1=[redacted]'), source); continue;
           }
           const { attachments: incoming = [], ...fields } = raw;
-          const sequence = String(job.accepted + 1).padStart(8, '0');
+          const index = active.nextSequence || job.accepted + 1;
+          if (index > 99999999) throw new Error('This dataset reached the maximum supported record index');
+          const sequence = String(index).padStart(8, '0');
           const payloads = incoming.map((file, index) => {
             const data = Buffer.from(file.data);
             const filename = `${String(index + 1).padStart(3, '0')}-${String(file.filename || 'original.bin').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-160)}`;
@@ -256,7 +253,7 @@ export class Collector {
           const tempPath = `${recordPath}.tmp`;
           await writeFile(tempPath, serialized, { flag: 'wx', mode: 0o600 });
           await rename(tempPath, recordPath);
-          seen.add(record.hash); job.accepted++; job.bytes += bytes;
+          seen.add(record.hash); job.accepted++; job.bytes += bytes; job.lastSequence = index; active.nextSequence = index + 1;
           job.counts[source] = (job.counts[source] || 0) + 1;
           job.licenses[result.license] = (job.licenses[result.license] || 0) + 1;
           const bucket = new Date().toISOString().slice(0, 16);

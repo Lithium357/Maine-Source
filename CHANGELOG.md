@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 — 2026-10-28 (recovery fix)
+
+- Resume datasets with missing record files, including files removed by security software, without renumbering or overwriting surviving records.
+- Preserve processed-item history and source checkpoints; recovery does not restore quarantined files or reset discovery to retry them.
+- Use the saved high-water record index even when the final record is missing; report missing slots in run history.
+- Inspect saved records with bounded parallel I/O and display progress during long recovery checks.
+- Keep counters unchanged when a validation failure blocks recovery; identify the affected record filename.
+- Handle record files disappearing during inspection and wait safely for recovery initialization when closing the app.
+
 ## 0.3.0 — Python API, portable credentials, and Resume controls
 
 - Add a dependency-free Python SDK and packaged backend over private local stdin/stdout, with no GUI automation or network listener.

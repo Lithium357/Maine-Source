@@ -1,6 +1,6 @@
 {
   "name": "maine-source",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A local-first desktop workbench for building traceable text datasets",
   "license": "GPL-3.0-only",
   "author": "Maine-Source contributors",

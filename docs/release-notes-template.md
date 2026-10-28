@@ -20,7 +20,7 @@ The release includes a Python SDK wheel. Install it with pip and use `from maine
 
 Settings includes **Import keys JSON** and **Export keys JSON**. The same credential files work with the SDK. Portable JSON stores keys in plaintext: keep it private during transfer. GUI import offers session-only use or encrypted local persistence; API keys are held in memory unless explicitly exported.
 
-Paused, stopped, and interrupted runs have Resume controls in the app. Saved progress is retained; reached total budgets must be raised to continue.
+Paused, stopped, and interrupted runs have Resume controls in the app. Saved progress is retained; reached total budgets must be raised to continue. Missing record files are reported and surviving records keep their original indices. Recovery does not restore files quarantined by security software.
 
 ## Known limitations
 

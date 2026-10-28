@@ -1,6 +1,6 @@
-# Release readiness — 2026-10-23
+# Release readiness — 2026-10-28
 
-Current build: **0.3.0 alpha**, not a 1.0 release. Development stays on `main` until launch. This checklist separates implementation and local evidence from external release gates.
+Current build: **0.3.1 alpha**, not a 1.0 release. Development stays on `main` until launch. This checklist separates implementation and local evidence from external release gates.
 
 ## Implemented and locally checked
 
@@ -35,7 +35,7 @@ The owner has chosen **unsigned Windows distribution** because signing costs mon
 - [x] Version 0.2.1 Windows tests, packaging, installation, upgrade from a real 0.1.5 dataset, embedded-runtime extraction/export, uninstall, and data preservation passed on the disposable CI runner.
 - [x] Version 0.2.1 two-hour public CISA-data replay with injected source outages, restart/resume, validation, and streamed export passed. This is not sustained provider availability testing or every real-world disk/network scenario.
 - [x] Add unsigned distribution disclosure in the README, installer notice, app settings, and candidate artifacts.
-- [ ] Run the Windows build/lifecycle workflow for the current 0.3.0 candidate. Its code changes do not inherit older versions' passing checks automatically.
+- [ ] Run the Windows build/lifecycle workflow for the current 0.3.1 candidate. Its code changes do not inherit older versions' passing checks automatically.
 - [ ] Credentialed integration tests with owner-entered keys and representative full downloads. Settings now offers Test connection for all eight credentialed sources. GitHub/Hugging Face use authenticated identity endpoints; other probes only establish request acceptance. A public endpoint can ignore keys. Per-repository, gated-dataset, metered-content permissions and quota still need actual collection checks.
 - [ ] Enable private vulnerability reporting in GitHub's repository administration settings.
 - [ ] Outside beta checks on ordinary Windows machines: keyboard/display scaling, redirected/OneDrive Desktop, slow/full drives, offline recovery, relocation, reinstall, and remembered settings. The CI developer runner is not a bare consumer VM. No outside testers have been contacted.
@@ -95,3 +95,11 @@ The local Python SDK uses the installed runtime in Node mode, avoiding Windows G
 All **163 JavaScript tests** pass. Four Python integration scenarios pass against both the source and packaged Windows backends: collection with pause/resume and moved folders, stop/restart/forced-crash recovery, credential portability without dataset/history leakage, and workspace collision/path validation. These tests use local fixture data and synthetic keys, not live owner credentials. Direct Resume controls now appear in Jobs, Datasets, and run details. The updated Windows lifecycle/reliability CI must complete for this exact commit before its result is marked passed.
 
 The final local 0.3.0 installer and SDK wheel built successfully. The wheel installed into isolated test storage and controlled the packaged runtime. Final packaged API tests and the extraction/export diagnostic passed with zero integrity issues; checksums cover the installer, blockmap, and wheel. This is local evidence, not a completed 0.3.0 Windows CI lifecycle/soak result.
+
+## 0.3.1 recovery fix — 2026-10-28
+
+A real interrupted collection could not resume because the old preflight required contiguous record filenames. Windows Defender history confirmed record removals. The fix tolerates missing slots while preserving surviving files and the processed-item journal/checkpoints; it appends beyond the highest committed index, including a missing trailing record recorded in history. Recovery does not restore quarantined files or alter security settings. Bounded parallel inspection reports progress and commits reconstructed counters only after validation succeeds.
+
+All **167 JavaScript tests** pass, including missing-middle/trailing records, byte-preserving recovery, retained processed history, files removed during inspection, and unchanged counters on validation errors. A read-only dry run on a roughly 46,000-record user workspace passed and planned a new index beyond all existing records, with zero source requests and zero dataset writes. The private recovery metadata backup and audit reports are excluded from Git. Packaged/CI results for this exact patch must be checked separately.
+
+The 0.3.1 Windows installer and matching SDK wheel built successfully. Five packaged Python integration tests passed, including sparse recovery after simulated security-software record removal, preserved survivor bytes, and successful export. The packaged extraction/export diagnostic passed with zero integrity issues. Installer/wheel checksums were generated; the new Windows lifecycle/soak CI is separate pending evidence.

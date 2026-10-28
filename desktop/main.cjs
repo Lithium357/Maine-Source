@@ -14,7 +14,7 @@ const respond = fn => async (event, ...args) => {
   if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== pathToFileURL(uiFile).href) throw new Error('Untrusted IPC sender');
   try { return { ok: true, value: await fn(...args) }; } catch (error) { return { ok: false, error: error.message || 'Operation failed' }; }
 };
-const snapshot = () => ({ ...state, jobs: collector.jobs.map(job => ({ ...job, directory: path.join(job.storageParent || storage.datasets, job.id) })), sourceCatalog: catalog.sources, presets: catalog.presets, widgetCatalog: catalog.widgets, licenseIds: policy.licenseIds, licenseLevels: policy.levels, credentialStatus: Object.fromEntries(catalog.sources.filter(s => s.key).map(s => [s.id, Boolean(keys[s.id])])), secureStorage: safeStorage.isEncryptionAvailable(), localFiles: localPaths.map(p => path.basename(p)), dataPath: storage.data, workspaceBusy, version: app.getVersion() });
+const snapshot = () => ({ ...state, jobs: collector.jobs.map(job => ({ ...job, directory: path.join(job.storageParent || storage.datasets, job.id) })), sourceCatalog: catalog.sources, presets: catalog.presets, widgetCatalog: catalog.widgets, licenseIds: policy.licenseIds, licenseLevels: policy.levels, credentialStatus: Object.fromEntries(catalog.sources.filter(s => s.key).map(s => [s.id, Boolean(keys[s.id])])), secureStorage: safeStorage.isEncryptionAvailable(), localFiles: localPaths.map(p => path.basename(p)), dataPath: storage.data, workspaceBusy: workspaceBusy || Boolean(collector.starting), version: app.getVersion() });
 const emit = () => { if (window && !window.isDestroyed()) window.webContents.send('state:changed', snapshot()); };
 const save = () => atomicJSON(statePath(), state);
 async function workspaceOperation(fn) {
@@ -180,7 +180,7 @@ else app.whenReady().then(async () => {
   window.on('close', async event => {
     if (closing) return;
     event.preventDefault(); closing = true; collector.stop();
-    try { while (workspaceBusy) await new Promise(resolve => setTimeout(resolve, 100)); await collector.running; await collector.pendingSave; } finally { await workspaceLease?.release(); window.destroy(); app.quit(); }
+    try { while (workspaceBusy || collector.starting) await new Promise(resolve => setTimeout(resolve, 100)); collector.stop(); await collector.running; await collector.pendingSave; } finally { await workspaceLease?.release(); window.destroy(); app.quit(); }
   });
 }).catch(async error => { await workspaceLease?.release(); await dialog.showMessageBox({ type: 'error', title: 'Maine Source could not start', message: error.message }); app.quit(); });
 app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });

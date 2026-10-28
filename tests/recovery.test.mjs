@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile, readdir, symlink, rename } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile, readdir, symlink, rename, unlink } from 'node:fs/promises';
+import { unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { Collector } from '../src/engine.mjs';
 import { defaultRecipe } from '../src/catalog.mjs';
-import { browseRecords, recordDetail, validateDataset, jobFolder } from '../src/datasets.mjs';
+import { browseRecords, recordDetail, validateDataset, jobFolder, inspectForResume } from '../src/datasets.mjs';
 import { prepareStorage, relocateStorage, ensureFreeSpace } from '../src/storage.mjs';
 
 const item = n => ({ id: n, title: `Record ${n}`, text: `Full engineering manuscript number ${n} with enough content to satisfy the collection policy.`, contentRequests: [{ data: `Original manuscript ${n}`, filename: 'original.txt' }] });
@@ -13,6 +14,52 @@ async function setup(adapter, options = {}) {
   const collector = new Collector({ root, adapters: { nvd: adapter }, ...options }); await collector.init(); return { root, collector };
 }
 const recipe = { ...defaultRecipe(), sourceIds: ['nvd'], minLength: 1, limits: { files: 3, minutes: 0, megabytes: 0 } };
+
+test('resume preserves sparse record indices and does not restore removed or quarantined records', async () => {
+  const { root, collector } = await setup(async function* () { for (let n = 1; n <= 5; n++) yield item(n); });
+  const id = await collector.start(recipe); await collector.running;
+  const run = path.join(root, id), original = await readFile(path.join(run, 'records/00000003.json'));
+  await unlink(path.join(run, 'records/00000002.json'));
+  const journal = await readFile(path.join(run, 'processed.jsonl'));
+  collector.jobs[0].status = 'interrupted';
+  await collector.resume(id, { files: 4, minutes: 0, megabytes: 0 }); await collector.running;
+  assert.equal(collector.jobs[0].accepted, 4);
+  assert.deepEqual(await readdir(path.join(run, 'records')), ['00000001.json', '00000003.json', '00000004.json', '00000005.json']);
+  assert.deepEqual(await readFile(path.join(run, 'records/00000003.json')), original);
+  assert.ok((await readFile(path.join(run, 'processed.jsonl'))).subarray(0, journal.length).equals(journal));
+  assert.deepEqual(collector.jobs[0].recoveryGaps, [[2, 2]]);
+  assert.ok(collector.jobs[0].events.some(e => /not automatically restored/.test(e.message)));
+  assert.equal((await browseRecords(run)).total, 4);
+  await collector.exportTo(id, path.join(root, 'sparse.jsonl'));
+  assert.equal((await readFile(path.join(root, 'sparse.jsonl'), 'utf8')).trim().split('\n').length, 4);
+});
+
+test('a missing final record does not reuse its committed slot on resume', async () => {
+  const { root, collector } = await setup(async function* () { for (let n = 1; n <= 4; n++) yield item(n); });
+  const id = await collector.start(recipe); await collector.running;
+  const run = path.join(root, id); await unlink(path.join(run, 'records/00000003.json'));
+  collector.jobs[0].status = 'interrupted'; await collector.resume(id); await collector.running;
+  assert.deepEqual(await readdir(path.join(run, 'records')), ['00000001.json', '00000002.json', '00000004.json']);
+  assert.equal(collector.jobs[0].accepted, 3); assert.equal(collector.jobs[0].lastSequence, 4);
+});
+
+test('failed recovery validation leaves saved counters intact and reports the actual filename', async () => {
+  const { root, collector } = await setup(async function* () { yield item(1); });
+  const id = await collector.start(recipe); await collector.running;
+  const job = collector.jobs[0], accepted = job.accepted, bytes = job.bytes, counts = structuredClone(job.counts);
+  await writeFile(path.join(root, id, 'records/00000001.json'), '{"broken":true}'); job.status = 'interrupted';
+  await assert.rejects(collector.resume(id), /00000001.json/);
+  assert.equal(job.accepted, accepted); assert.equal(job.bytes, bytes); assert.deepEqual(job.counts, counts);
+  assert.equal(job.recoveryProgress, undefined); assert.equal(collector.starting, false);
+});
+
+test('files removed during the recovery scan become reported gaps instead of aborting the run', async () => {
+  const { root, collector } = await setup(async function* () { yield item(1); });
+  const id = await collector.start(recipe); await collector.running;
+  const run = path.join(root, id);
+  const result = await inspectForResume(run, { highWater: 1, onProgress: p => { if (!p.checked) unlinkSync(path.join(run, 'records/00000001.json')); } });
+  assert.equal(result.accepted, 0); assert.deepEqual(result.gaps, [[1, 1]]); assert.equal(result.lastSequence, 1);
+});
 test('resume keeps the dataset ID, skips saved content, and retries failed materialization', async () => {
   let failed = true, firstDownloads = 0;
   const adapter = async function* () { for (let n = 1; n <= 3; n++) { const r = item(n); if (n === 1) firstDownloads++; if (n === 2 && failed) r.contentRequests = [{ error: 'Temporary missing content' }]; yield r; } };

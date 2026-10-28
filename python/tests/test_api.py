@@ -113,6 +113,30 @@ class AgentAPI(unittest.TestCase):
         with self.client() as api:
             self.assertEqual(api.datasets(), [])
 
+    def test_resume_keeps_survivors_when_records_have_been_removed(self):
+        with self.client() as api:
+            job = api.collect(self.recipe(api, 5), local_files=[self.input], timeout=30)
+        records = Path(job["directory"]) / "records"
+        preserved = (records / "00000003.json").read_bytes()
+        (records / "00000002.json").unlink()
+        (records / "00000005.json").unlink()
+        history = self.workspace / "datasets" / "jobs.json"
+        jobs = json.loads(history.read_text(encoding="utf-8"))
+        jobs[0]["status"] = "interrupted"
+        history.write_text(json.dumps(jobs), encoding="utf-8")
+        with self.client() as api:
+            api.resume(job["id"], limits={"files": 7, "minutes": 0, "megabytes": 0}, local_files=[self.input])
+            resumed = api.wait(job["id"], timeout=30)
+            self.assertEqual(resumed["accepted"], 7)
+            self.assertEqual(resumed["lastSequence"], 9)
+            self.assertEqual((records / "00000003.json").read_bytes(), preserved)
+            self.assertFalse((records / "00000002.json").exists())
+            self.assertFalse((records / "00000005.json").exists())
+            self.assertTrue((records / "00000009.json").exists())
+            output = self.root / "sparse.jsonl"
+            api.export(job["id"], output)
+            self.assertEqual(len(output.read_text(encoding="utf-8").splitlines()), 7)
+
 
 if __name__ == "__main__":
     unittest.main()
