@@ -12,7 +12,7 @@ import time
 from typing import Mapping, Sequence
 
 __all__ = ["Client", "MaineSourceError", "load_keys", "save_keys"]
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 _SCHEMA = "maine-source.credentials.v1"
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2 — 2026-10-29 (repository downloads and advanced search)
+
+- GitHub: choose a branch/tag/commit, resolve and checkpoint its SHA, enumerate its tree, and download selected files through the Contents API. Alternatively save the complete tarball snapshot, without extension/directory filters.
+- Hugging Face: default to actual repository files, including dataset shards; resolve and checkpoint the revision, follow paginated recursive trees, and download revision-pinned original bytes. Viewer rows remain an explicit alternative.
+- Stack Exchange: use advanced search with tags, text, excluded tags, dates, sort, and order. Default to ascending creation order; preserve full question/answer HTML and each post's license. Checkpoint page boundaries and the upper creation date.
+- Follow archive/Hub download redirects with API credentials removed after the initial request. Keep existing size, storage, filtering, and original-file integrity controls.
+- Expose the new options through the GUI source settings and Python API source catalog. Archives do not fetch submodules or external LFS payloads; Parquet files are preserved without text extraction.
+
 ## 0.3.1 — 2026-10-28 (recovery fix)
 
 - Resume datasets with missing record files, including files removed by security software, without renumbering or overwriting surviving records.

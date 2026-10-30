@@ -1,11 +1,18 @@
-# Release readiness — 2026-10-28
+# Release readiness — 2026-10-29
 
-Current build: **0.3.1 alpha**, not a 1.0 release. Development stays on `main` until launch. This checklist separates implementation and local evidence from external release gates.
+Current build: **0.3.2 alpha**, not a 1.0 release. Development stays on `main` until launch. This checklist separates implementation and local evidence from external release gates.
+
+## 0.3.2 local evidence — 2026-10-29
+
+- All 175 JavaScript tests pass, including pinned commit/tree/content requests, complete Hub pagination, hostile/repeated next-link rejection, original binary shard preservation, advanced search with answers, and token stripping across redirects. Junction tests required execution outside the filesystem sandbox to create their fixtures.
+- Public live checks passed for GitHub Contents downloads, Hugging Face repository files, and Stack Exchange posts. `node scripts/smoke-repositories.mjs` also saved a GitHub repository tarball (365,244 extracted characters), the Dolly JSONL shard (13,085,339 characters), and two Stack Overflow `nlp` posts using ascending creation order. All three saved collections had zero errors, extraction failures, or SHA-256 integrity issues. These are bounded samples, not coverage benchmarks.
+- The unsigned 0.3.2 installer and matching Python wheel built successfully; installer signature status is `NotSigned`. All five Python API tests passed against the packaged application. The packaged extraction/export/relocation self-test passed with zero integrity issues, and checksums cover the installer, blockmap, and wheel.
+- No owner-token or gated/private dataset checks were performed. The current Windows lifecycle/soak CI and outside-machine beta gates remain separate from this local evidence.
 
 ## Implemented and locally checked
 
 - Resume stopped/interrupted/failed runs with the same dataset ID, reconcile committed files after interrupted history writes, skip previously processed candidates, retry failed materialization, and keep duplicate detection across sessions. Reached budgets must be raised explicitly before continuing.
-- Persist completed-page checkpoints for NVD, arXiv, CKAN, Dataverse, and OpenAlex. Other connectors replay discovery; accepted content is skipped once yielded. This is not byte-range download resumption, and some connectors fetch text during discovery. Changing live catalogs can shift offset pages; this does not guarantee a frozen snapshot of every source.
+- Persist completed-page checkpoints for NVD, arXiv, CKAN, Dataverse, and OpenAlex. Stack Exchange checkpoints pages and an upper creation date. GitHub and Hugging Face file downloads retain commit/revision pins across resume; their tree discovery is replayed. Other connectors replay discovery; accepted content is skipped once yielded. This is not byte-range download resumption, and some connectors fetch text during discovery. Changing live catalogs can shift offset pages; this does not guarantee a frozen snapshot of every source.
 - Keep a second run-history file and recover from it when the primary JSON is corrupt. Preserve originals and committed records; interrupted temporary writes at the next record position are replaced on resume.
 - Choose another data drive/folder, check free space before collection/writes/exports, copy storage without overwriting an existing destination, retain the old folder as backup, persist the new location. Failed copies can leave a staging folder; the original storage stays active until the copy and preference save finish.
 - Browse/search all records in a dataset with paging and source/license/content-status filters. Read full text in 25,000-character pages and reveal original files. Dataset deletion requires a native confirmation and uses the Recycle Bin; existing exports are retained.
@@ -35,7 +42,7 @@ The owner has chosen **unsigned Windows distribution** because signing costs mon
 - [x] Version 0.2.1 Windows tests, packaging, installation, upgrade from a real 0.1.5 dataset, embedded-runtime extraction/export, uninstall, and data preservation passed on the disposable CI runner.
 - [x] Version 0.2.1 two-hour public CISA-data replay with injected source outages, restart/resume, validation, and streamed export passed. This is not sustained provider availability testing or every real-world disk/network scenario.
 - [x] Add unsigned distribution disclosure in the README, installer notice, app settings, and candidate artifacts.
-- [ ] Run the Windows build/lifecycle workflow for the current 0.3.1 candidate. Its code changes do not inherit older versions' passing checks automatically.
+- [ ] Run the Windows build/lifecycle workflow for the current 0.3.2 candidate. Its code changes do not inherit older versions' passing checks automatically.
 - [ ] Credentialed integration tests with owner-entered keys and representative full downloads. Settings now offers Test connection for all eight credentialed sources. GitHub/Hugging Face use authenticated identity endpoints; other probes only establish request acceptance. A public endpoint can ignore keys. Per-repository, gated-dataset, metered-content permissions and quota still need actual collection checks.
 - [ ] Enable private vulnerability reporting in GitHub's repository administration settings.
 - [ ] Outside beta checks on ordinary Windows machines: keyboard/display scaling, redirected/OneDrive Desktop, slow/full drives, offline recovery, relocation, reinstall, and remembered settings. The CI developer runner is not a bare consumer VM. No outside testers have been contacted.

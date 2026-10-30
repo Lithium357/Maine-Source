@@ -13,11 +13,12 @@ export class HttpClient {
     this.next = new Map();
   }
   async wait(ms) { if (ms > 0) await this.sleep(ms, undefined, { signal: this.signal }); }
-  async request(url, { headers = {}, interval = 500, json = true, timeoutMs = 45000, method = 'GET', body, publicRedirects = false, redirectCount = 0 } = {}) {
+  async request(url, { headers = {}, interval = 500, json = true, timeoutMs = 45000, method = 'GET', body, publicRedirects = false, downloadRedirects = false, redirectCount = 0 } = {}) {
     const endpoint = new URL(url);
     if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password) throw new Error('Only HTTPS sources without embedded credentials are supported');
     const host = endpoint.host;
     if (publicRedirects && (method !== 'GET' || Object.keys(headers).length)) throw new Error('Public redirects cannot be used with credentials or custom headers');
+    if (downloadRedirects && method !== 'GET') throw new Error('Download redirects require GET');
     for (let attempt = 0; attempt < 4; attempt++) {
       this.signal?.throwIfAborted();
       await this.wait((this.next.get(host) || 0) - this.clock());
@@ -28,7 +29,7 @@ export class HttpClient {
         method, body,
         headers: { 'User-Agent': 'MaineSource/0.1 (dataset collection; https://github.com/Lithium357/Maine-Source)', Accept: json ? 'application/json' : '*/*', ...headers },
         signal: this.signal ? AbortSignal.any([this.signal, timeout]) : timeout,
-        redirect: publicRedirects ? 'manual' : 'error',
+        redirect: publicRedirects || downloadRedirects ? 'manual' : 'error',
       }); } catch (error) {
         this.signal?.throwIfAborted();
         if (/redirect/i.test(error.message)) throw new Error(`${host}: redirect refused`);
@@ -37,12 +38,14 @@ export class HttpClient {
         this.log('rate', `${host}: network interruption; retrying.`);
         await this.wait(2000 * 2 ** attempt); continue;
       }
-      if (publicRedirects && [301, 302, 303, 307, 308].includes(response.status)) {
+      if ((publicRedirects || downloadRedirects) && [301, 302, 303, 307, 308].includes(response.status)) {
         await response.body?.cancel();
         const location = response.headers.get('location');
         if (!location || redirectCount >= 5) throw new Error(`${host}: invalid or excessive download redirects`);
         const next = new URL(location, endpoint);
         if (next.protocol !== 'https:' || next.username || next.password) throw new Error('Download redirects must use HTTPS without embedded credentials');
+        // Signed CDN URLs carry their own access. Never forward the API token,
+        // cookies, or other caller headers, even on a same-origin redirect.
         return this.request(next.href, { interval, json, timeoutMs, publicRedirects: true, redirectCount: redirectCount + 1 });
       }
       const remaining = response.headers.get('x-ratelimit-remaining');

@@ -46,8 +46,11 @@ test('GitHub pins a commit and gives file notices precedence while flagging conf
   const http = { async get(address) {
     if (address.includes('/commits/')) return { sha: 'commit123' };
     if (address.includes('/git/trees/')) return { tree: [{ type: 'blob', path: 'main.py', sha: 'blob123', size: 100, mode: '100644' }] };
-    if (address.includes('/git/blobs/')) return { encoding: 'base64', content: Buffer.from('# SPDX-License-Identifier: Apache-2.0\nprint("hello")').toString('base64') };
     return { default_branch: 'main', license: { spdx_id: 'MIT' }, private: false };
+  }, async binary(address, options) {
+    assert.match(address, /\/contents\/main.py\?ref=commit123$/);
+    assert.equal(options.headers.Accept, 'application/vnd.github.raw+json');
+    return { data: Buffer.from('# SPDX-License-Identifier: Apache-2.0\nprint("hello")') };
   } };
   const result = await connectors.github({ input: 'owner/repo', http }).next(); assert.equal(result.value.rights.expression, 'Apache-2.0'); assert.equal(result.value.rights.conflict, true); assert.equal(result.value.version, 'commit123'); assert.match(result.value.url, /commit123/);
 });
@@ -59,9 +62,8 @@ test('GitHub traverses individual directories when a recursive tree is truncated
     if (address.includes('?recursive')) return { truncated: true, tree: [] };
     if (address.endsWith('/git/trees/commit')) return { tree: [{ type: 'tree', path: 'src', sha: 'subtree' }, { type: 'tree', path: 'node_modules', sha: 'ignored' }] };
     if (address.endsWith('/git/trees/subtree')) return { tree: [{ type: 'blob', path: 'main.py', sha: 'blob', size: 20, mode: '100644' }] };
-    if (address.includes('/git/blobs/')) return { encoding: 'base64', content: Buffer.from('print("hello")').toString('base64') };
     return { default_branch: 'main', private: false };
-  } };
+  }, async binary() { return { data: Buffer.from('print("hello")') }; } };
   const items = []; for await (const item of connectors.github({ input: 'owner/repo', http })) items.push(item);
   assert.equal(items.length, 1); assert.equal(items[0].metadata.path, 'src/main.py');
   assert.ok(!calls.some(url => url.includes('/ignored')));

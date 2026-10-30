@@ -2,11 +2,11 @@
 
 A Windows desktop workbench for collecting text and code into traceable ML datasets. Pick sources with checkboxes, define reusable recipes, and watch a customizable local dashboard.
 
-**Status: 0.3.1 alpha.** Underlying content is the default: papers, deposited files, linked articles, source code, and complete structured records are collected alongside provenance. Original files are saved separately from extracted text and included in portable exports. Metadata-only collection is an explicit recipe option. This is a local Windows application with no hosted collection backend.
+**Status: 0.3.2 alpha.** Underlying content is the default: papers, deposited files, linked articles, source code, and complete structured records are collected alongside provenance. Original files are saved separately from extracted text and included in portable exports. Metadata-only collection is an explicit recipe option. This is a local Windows application with no hosted collection backend.
 
 ## Run or install
 
-Run `Maine Source Setup 0.3.1.exe` from the build's `release/` folder to install for your Windows user. **This application is unsigned because the developer cannot currently afford code signing.** Windows may display an unknown-publisher or protection warning. We plan to distribute 1.0 unsigned too. Download only from the official [GitHub releases](https://github.com/Lithium357/Maine-Source/releases) and compare the published SHA-256 checksum. Checksums detect file changes; they do not provide a verified publisher identity. No independent security audit has been performed. An unpacked app is also generated in `release/win-unpacked/`.
+Run `Maine Source Setup 0.3.2.exe` from the build's `release/` folder to install for your Windows user. **This application is unsigned because the developer cannot currently afford code signing.** Windows may display an unknown-publisher or protection warning. We plan to distribute 1.0 unsigned too. Download only from the official [GitHub releases](https://github.com/Lithium357/Maine-Source/releases) and compare the published SHA-256 checksum. Checksums detect file changes; they do not provide a verified publisher identity. No independent security audit has been performed. An unpacked app is also generated in `release/win-unpacked/`.
 
 For development, install Node.js 24 and pnpm 11, then:
 
@@ -39,7 +39,7 @@ The home dashboard includes activity history, source mix, recent jobs, filter ou
 
 ## Python API and portable keys
 
-Agents can collect without GUI control using the [Python API](python/README.md). Install the release wheel with `python -m pip install maine_source-0.3.1-py3-none-any.whl`, then use `from maine_source import Client`. The installed app supplies its own backend runtime; only the Python API needs Python 3.10+. Source-checkout development also supports Node.js 24. The API supports source discovery, recipes, collection, progress, pause/resume/stop, record browsing, validation, folder changes, and export. It uses a private local subprocess connection; no network listener is opened.
+Agents can collect without GUI control using the [Python API](python/README.md). Install the release wheel with `python -m pip install maine_source-0.3.2-py3-none-any.whl`, then use `from maine_source import Client`. The installed app supplies its own backend runtime; only the Python API needs Python 3.10+. Source-checkout development also supports Node.js 24. The API supports source discovery, recipes, collection, progress, pause/resume/stop, record browsing, validation, folder changes, and export. It uses a private local subprocess connection; no network listener is opened.
 
 In **Connections & settings**, use **Import keys JSON** / **Export keys JSON** to transfer all keys between machines or configurations. Both flat source-ID mappings and versioned bundles work with the GUI and Python API. **Portable credential JSON is plaintext**; keep it private and out of Git. GUI imports can be session-only or remembered with encrypted system storage. Python keys remain in that client’s memory unless explicitly exported.
 
@@ -53,13 +53,13 @@ Every release includes the [complete source and API-key signup list](docs/releas
 | --- | --- | --- | --- |
 | NIST NVD | CVE descriptions plus complete returned CVE JSON | Optional NVD API key | Unknown unless applicable evidence is supplied |
 | CISA KEV | Descriptions/actions plus complete returned KEV entry | None | Unknown by default |
-| GitHub | Selected source/code files, saved verbatim and as text | Optional read-only PAT | Repository declaration and file SPDX notices; commit pinned |
+| GitHub | Selected code files via Contents API, or complete tarball snapshot | Optional read-only PAT | Repository declaration and file SPDX notices; chosen ref resolved and pinned |
 | NASA Open APIs | APOD explanation and direct media file when supplied | NASA key or restricted DEMO_KEY | Original notices retained; embedded services may not expose a download |
 | Stack Exchange | Questions and answers, original HTML, per-post metadata | Optional application key | Per-post license and author attribution |
 | Europe PMC | Full article XML and extracted text | None | Article-specific license evidence |
 | Crossref | Available publisher full-text PDF/XML/plain-text links | None | Paper declarations apply to requested paper content; access may fail |
 | Zenodo | Deposited research files and supported text extraction | None | Deposited-content declarations; metadata-only CC0 is kept separate |
-| Hugging Face | Selected Dataset Viewer text plus complete returned rows | Optional read token | Dataset-card declarations and revision/split/row IDs retained |
+| Hugging Face | Revision-pinned repository files/shards, or Viewer rows | Optional read token | Dataset-card declarations; raw files and repository paths retained |
 | Wikipedia | Complete article extract and supplied revision-pinned wiki source | None | Wiki terms, revision IDs, and history links |
 | Wikidata | Complete entity JSON, including statements and references | None | CC0 source declaration |
 | GovInfo | Publication HTML and available PDF | Required api.data.gov key | Unknown; public demo-key sample checked, owner-key permissions still unverified |
@@ -82,6 +82,12 @@ See the [source expansion research](docs/source-research-2026-10-22.md) for furt
 
 ### More public data, without adding code
 
+- **GitHub:** choose `files` for selected code/documentation or `archive` for a repository tarball. A branch, tag, or commit is resolved to a SHA and retained across resume.
+- **Hugging Face:** `files` is now the default and downloads actual revision-pinned repository files, including dataset shards. Choose `rows` for the previous Viewer behavior. Download caps still apply; Parquet is preserved as a binary original, without extracting its rows.
+- **Stack Exchange:** advanced search supports tags such as `nlp`, free text, excluded tags, creation dates, sort, and ascending/descending order. Defaults match the requested ascending creation query, with full question/answer bodies.
+
+See [repository downloads and advanced search](docs/repository-downloads.md) for settings, endpoints, and Python examples.
+
 - **CKAN:** defaults to the Humanitarian Data Exchange; other compatible portal URLs work too. The catalog discovers downloadable resources; full mode retrieves those resources.
 - **Research Dataverse:** defaults to Harvard Dataverse. Full mode follows dataset versions and downloads public original files.
 - **Socrata:** paste a public `/resource/xxxx-xxxx.json` URL and optionally enter a SoQL filter. This connector uses the public resource interface, not authenticated SODA 3. Live-table changes can shift offset-based rows during collection.
@@ -90,7 +96,7 @@ See the [source expansion research](docs/source-research-2026-10-22.md) for furt
 
 Live checks on 2026-10-22 retrieved underlying files/content through arXiv, CKAN, Dataverse, Zenodo, RSS, Europe PMC, GitHub, and Wikidata. The arXiv end-to-end check saved the 15-page PDF and submitted source archive for `1706.03762v7`, extracted 130,377 characters across paper and source, found eleven LaTeX-related members, and verified exported original-file hashes. These are small integration samples, not completeness benchmarks. Use `node scripts/smoke-content.mjs` for the paper storage/export check or `pnpm smoke -- --full arxiv` for retrieval. Ordinary `pnpm smoke` checks discovery/metadata without following content links.
 
-Version 0.3.1 passes 167 automated tests, including full-text keyword matching, original-file budget accounting, portable exports, partial failures, and cancellation of isolated extraction subprocesses. The 0.1.4 packaged GUI collected the complete arXiv test paper with both originals, 130,377 extracted characters, zero errors, and the exact one-record stop. The inspector displayed both original-file controls and downloaded status. The 0.1.5 GUI saved UTF-32 preferences and exported that existing paper as UTF-32 plain text (521,788 bytes) and actual LaTeX source (10 `.tex` members), preserving both original-file hashes. Earlier GUI checks verified CISA on 0.1.2 and USGS on 0.1.3. See [content coverage](docs/content-coverage.md) for the source audit and exact behavior.
+Version 0.3.2 passes 175 automated tests, including full-text keyword matching, original-file budget accounting, portable exports, partial failures, repository pagination, pinned revisions, credential stripping on download redirects, and cancellation of isolated extraction subprocesses. The 0.1.4 packaged GUI collected the complete arXiv test paper with both originals, 130,377 extracted characters, zero errors, and the exact one-record stop. The inspector displayed both original-file controls and downloaded status. The 0.1.5 GUI saved UTF-32 preferences and exported that existing paper as UTF-32 plain text (521,788 bytes) and actual LaTeX source (10 `.tex` members), preserving both original-file hashes. Earlier GUI checks verified CISA on 0.1.2 and USGS on 0.1.3. See [content coverage](docs/content-coverage.md) for the source audit and exact behavior.
 
 ## Release preparation
 

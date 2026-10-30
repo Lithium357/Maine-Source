@@ -116,7 +116,7 @@ export async function materialize(record, http, settings = {}) {
       for (const candidate of candidates) {
         http.signal?.throwIfAborted();
         try {
-          result = candidate.data !== undefined ? { data: Buffer.from(candidate.data), mediaType: candidate.mediaType || request.mediaType || 'application/octet-stream' } : await http.binary(candidate.url, { interval: candidate.interval || request.interval || 1100, maxBytes: Math.min(maxBytes, totalLimit - bytes), headers: candidate.headers || {} });
+          result = candidate.data !== undefined ? { data: Buffer.from(candidate.data), mediaType: candidate.mediaType || request.mediaType || 'application/octet-stream' } : await http.binary(candidate.url, { interval: candidate.interval || request.interval || 1100, maxBytes: Math.min(maxBytes, totalLimit - bytes), headers: candidate.headers || {}, downloadRedirects: candidate.downloadRedirects === true });
           if (/\.pdf$/i.test(request.filename || '') && Buffer.from(result.data).subarray(0, 5).toString() !== '%PDF-') throw new Error('The server returned a non-PDF response for a paper PDF');
           selected = candidate; break;
         } catch (error) { http.signal?.throwIfAborted(); attempts.push({ url: candidate.url ? publicURL(candidate.url) : undefined, message: error.message }); }

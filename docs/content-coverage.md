@@ -23,13 +23,13 @@ Verified live on 2026-10-22 with `1706.03762v7`: original PDF 2,215,244 bytes / 
 | Dataverse | Versioned dataset's public original files, collected separately | Restricted files are reported, not bypassed |
 | Open Library | Public-scan edition's linked Internet Archive text and PDF | Borrowed/restricted books and absent formats are unavailable |
 | RSS/Atom | Linked article HTML and extracted main article | No recursive site crawl; JS-only pages may lack article text |
-| GitHub | Selected source files, verbatim originals + text | Extension/size exclusions and truncated-tree limitation remain |
+| GitHub | Commit-pinned selected files through Contents API, or complete repository tarball | Files mode excludes common generated/vendor directories and files over 1 MB; archive mode ignores those filters but respects download caps. Submodule/external LFS payloads are not fetched. Truncated trees fall back to directory traversal. |
 | Stack Exchange | Full question and answer HTML + extracted text | Posts are separate records with per-post authors/licenses |
 | Wikipedia | Full extract + supplied revision's wikitext | Not a full revision history or embedded-media mirror |
 | Wikidata | Complete returned entity, including claims/references | Not recursive traversal of every related entity |
 | NASA APOD | Explanation + direct image/video file when supplied | Embedded media services may expose no direct downloadable file |
 | GovInfo | Publication HTML + PDF | Authenticated live integration check still needed |
-| Hugging Face | Selected Viewer text fields + complete returned row | Not all repository shards; external media referenced by a row is not automatically mirrored |
+| Hugging Face | Revision-pinned repository files/shards (default), or selected Viewer text fields + complete returned row | Recursive tree pagination; optional extension filter and download caps. Parquet/binary originals are retained without text extraction. Viewer rows are a live view; external referenced files are not automatically mirrored. |
 | HTTPS JSONL | Actual selected rows + complete original row objects | Input cap, text-column choice, and no resumable download |
 | NVD/CISA/OSV/GitHub advisories | Advisory text + original structured record | References are provenance, not instructions to recursively scrape every referenced website |
 | Socrata/USGS | Actual table rows / GeoJSON observations | Source structure preserved; live pagination is not a frozen snapshot |

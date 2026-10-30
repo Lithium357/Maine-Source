@@ -50,21 +50,32 @@ async function* nasa({ input, key, http }) {
     }
   }
 }
-async function* github({ input, key, http, settings = {} }) {
+async function* github({ input, key, http, settings = {}, resume = {}, checkpoint = async () => {} }) {
   const repositories = String(input || '').split(/[\n,]/).map(s => s.trim().replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '')).filter(Boolean);
   if (!repositories.length || repositories.some(repo => !/^[\w.-]+\/[\w.-]+$/.test(repo))) throw new Error('GitHub needs repository names in owner/repo format, one per line');
   const headers = githubHeaders(key);
   const extensions = String(settings.extensions || '.py,.js,.ts,.tsx,.rs,.go,.c,.cpp,.h,.java,.md,.txt').split(',').map(s => s.trim().toLowerCase());
+  const mode = settings.downloadMode || 'files';
+  if (!['files', 'archive'].includes(mode)) throw new Error('Unknown GitHub download mode');
+  const pins = { ...resume.pins };
   for (const repo of repositories) {
     const root = `https://api.github.com/repos/${repo}`;
     const meta = await http.get(root, { headers, interval: 1200 });
     if (meta.private) throw new Error('This connector collects public repositories only');
-    const commit = await http.get(`${root}/commits/${encodeURIComponent(meta.default_branch)}`, { headers, interval: 1200 });
+    const commit = await http.get(`${root}/commits/${encodeURIComponent(pins[repo] || settings.ref || meta.default_branch)}`, { headers, interval: 1200 });
+    if (!commit.sha) throw new Error('GitHub did not return a commit SHA');
+    pins[repo] = commit.sha; await checkpoint({ pins });
     const repoExpression = normalizeLicense(meta.license?.spdx_id);
-    const tree = await http.get(`${root}/git/trees/${commit.sha}?recursive=1`, { headers, interval: 1200 });
+    if (mode === 'archive') {
+      const archiveUrl = `${root}/tarball/${encodeURIComponent(commit.sha)}`;
+      yield { id: `${repo}/archive@${commit.sha}`, title: `${repo} repository archive`, text: `${repo} at ${commit.sha}`, url: `https://github.com/${repo}/tree/${commit.sha}`, version: commit.sha, attribution: repo, rights: repoExpression ? declaration(repoExpression, `https://github.com/${repo}/tree/${commit.sha}`, 'repository', { notes: 'Repository declaration; individual files may have different notices.' }) : unknown(), contentRequests: [{ url: archiveUrl, headers, downloadRedirects: true, filename: `${repo.split('/')[1]}-${commit.sha}.tar.gz`, role: 'complete repository snapshot' }], metadata: { repository: repo, commit: commit.sha, original: commit, downloadMode: 'archive', exclusions: 'No extension/directory filters; no submodule or external Git LFS fetch' } };
+      continue;
+    }
+    const treeSha = commit.commit?.tree?.sha || commit.sha;
+    const tree = await http.get(`${root}/git/trees/${treeSha}?recursive=1`, { headers, interval: 1200 });
     if (tree.truncated) {
       // Fall back to the nonrecursive tree API; never silently omit large repositories.
-      tree.tree = []; const pending = [{ sha: commit.sha, prefix: '' }]; let visited = 0;
+      tree.tree = []; const pending = [{ sha: treeSha, prefix: '' }]; let visited = 0;
       while (pending.length) {
         if (++visited > 100000) throw new Error('GitHub tree traversal exceeded 100,000 directories');
         const directory = pending.pop();
@@ -80,9 +91,9 @@ async function* github({ input, key, http, settings = {} }) {
     for (const file of tree.tree || []) {
       if (file.type !== 'blob' || file.mode === '120000' || file.size > 1000000 || !extensions.some(ext => file.path.toLowerCase().endsWith(ext))) continue;
       if (/(^|\/)(node_modules|vendor|dist|build|\.git)(\/|$)/.test(file.path)) continue;
-      const blob = await http.get(`${root}/git/blobs/${file.sha}`, { headers, interval: 1200 });
-      if (blob.encoding !== 'base64') continue;
-      const buffer = Buffer.from(blob.content, 'base64');
+      const filePath = file.path.split('/').map(encodeURIComponent).join('/');
+      const result = await http.binary(url(`${root}/contents/${filePath}`, { ref: commit.sha }), { headers: { ...headers, Accept: 'application/vnd.github.raw+json' }, maxBytes: 1000000, interval: 1200 });
+      const buffer = Buffer.from(result.data);
       if (buffer.includes(0)) continue;
       const text = buffer.toString('utf8');
       const notice = text.match(/SPDX-License-Identifier:\s*([^\r\n]+)/)?.[1]?.replace(/\s*(?:\*\/|-->|#)\s*$/, '').trim();
@@ -92,11 +103,17 @@ async function* github({ input, key, http, settings = {} }) {
     }
   }
 }
-async function* stackexchange({ input, key, http, settings = {} }) {
+async function* stackexchange({ input, key, http, settings = {}, resume = {}, checkpoint = async () => {} }) {
   const site = settings.site || 'stackoverflow';
   if (!/^[a-z.]+$/.test(site)) throw new Error('Invalid Stack Exchange site');
-  for (let page = 1;;page++) {
-    const data = await http.get(url('https://api.stackexchange.com/2.3/questions', { site, page, pagesize: 100, order: 'desc', sort: 'activity', tagged: input, filter: 'withbody', key: key || undefined }), { interval: 1100 });
+  const sort = settings.sort || 'creation', order = settings.order || 'asc';
+  if (!['activity', 'creation', 'votes', 'relevance'].includes(sort) || !['asc', 'desc'].includes(order)) throw new Error('Invalid Stack Exchange sort/order');
+  const fromdate = settings.fromdate ? Math.floor(Date.parse(`${settings.fromdate}T00:00:00Z`) / 1000) : undefined;
+  const todate = resume.todate || (settings.todate ? Math.floor(Date.parse(`${settings.todate}T23:59:59Z`) / 1000) : Math.floor(Date.now() / 1000));
+  if (fromdate !== undefined && (!Number.isFinite(fromdate) || fromdate > todate) || !Number.isFinite(todate)) throw new Error('Invalid Stack Exchange date range (use YYYY-MM-DD)');
+  for (let page = Number.isSafeInteger(resume.page) && resume.page > 0 ? resume.page : 1;;page++) {
+    await checkpoint({ page, todate });
+    const data = await http.get(url('https://api.stackexchange.com/2.3/search/advanced', { site, page, pagesize: 100, order, sort, tagged: input, q: settings.query, nottagged: settings.excludedTags, fromdate, todate, filter: 'withbody', key: key || undefined }), { interval: 1100 });
     if (data.error_message) throw new Error(`Stack Exchange: ${data.error_message}`);
     for (const item of data.items || []) {
       yield { id: `${site}/${item.question_id}`, title: plain(item.title), text: plain(item.body), url: item.link, version: String(item.last_edit_date || item.creation_date), attribution: `${item.owner?.display_name || 'Unknown author'} (${item.owner?.link || ''})`, rights: item.content_license ? declaration(item.content_license, item.link) : unknown(), contentRequests: [{ data: item.body || '', filename: 'question.html', mediaType: 'text/html' }], metadata: { tags: item.tags, score: item.score, original: item } };
@@ -114,6 +131,7 @@ async function* stackexchange({ input, key, http, settings = {} }) {
     }
     if (data.backoff) await http.wait(data.backoff * 1000);
     if (!data.has_more || data.quota_remaining === 0) break;
+    await checkpoint({ page: page + 1, todate });
   }
 }
 async function* wikipedia({ input, http, settings = {} }) {
@@ -190,21 +208,53 @@ async function* zenodo({ input, http, settings = {} }) {
     if (items.length < 25) break;
   }
 }
-async function* huggingface({ input, key, http, settings = {} }) {
+async function* huggingface({ input, key, http, settings = {}, resume = {}, checkpoint = async () => {} }) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(input || '')) throw new Error('Hugging Face needs an owner/dataset identifier');
   const headers = key ? { Authorization: `Bearer ${key}` } : {};
-  const card = await http.get(`https://huggingface.co/api/datasets/${input}`, { headers });
+  const mode = settings.downloadMode || 'files';
+  if (!['files', 'rows'].includes(mode)) throw new Error('Unknown Hugging Face download mode');
+  const apiRoot = `https://huggingface.co/api/datasets/${input}`;
+  const ref = mode === 'files' ? resume.revision || settings.revision : undefined;
+  const card = await http.get(ref ? `${apiRoot}/revision/${encodeURIComponent(ref)}` : apiRoot, { headers });
+  const rawLicense = card.cardData?.license;
+  const declared = Array.isArray(rawLicense) ? (rawLicense.length === 1 ? rawLicense[0] : null) : rawLicense;
+  const recordUrl = `https://huggingface.co/datasets/${input}`;
+  if (mode === 'files') {
+    if (!/^[a-f0-9]{40,64}$/i.test(card.sha || '')) throw new Error('Hugging Face did not return an immutable revision SHA');
+    const revision = card.sha;
+    await checkpoint({ revision });
+    const treePath = `/api/datasets/${input}/tree/${revision}`;
+    let next = url(`https://huggingface.co${treePath}`, { recursive: true, limit: 100 });
+    const visited = new Set();
+    const extensions = String(settings.extensions || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    while (next) {
+      const endpoint = new URL(next);
+      if (endpoint.origin !== 'https://huggingface.co' || endpoint.pathname !== treePath || endpoint.username || endpoint.password) throw new Error('Unexpected Hugging Face pagination URL');
+      if (visited.has(next) || visited.size >= 100000) throw new Error('Hugging Face repeated or exceeded its tree pagination');
+      visited.add(next);
+      const { data: entries, headers: responseHeaders } = await http.get(next, { headers, includeHeaders: true });
+      if (!Array.isArray(entries)) throw new Error('Hugging Face returned an invalid repository tree');
+      for (const file of entries) {
+        if (file.type !== 'file') continue;
+        if (!file.path || file.path.split('/').some(part => !part || part === '.' || part === '..') || file.path.includes('\\')) throw new Error('Hugging Face returned an invalid file path');
+        if (extensions.length && !extensions.some(ext => file.path.toLowerCase().endsWith(ext))) continue;
+        const filePath = file.path.split('/').map(encodeURIComponent).join('/');
+        const download = `${recordUrl}/resolve/${revision}/${filePath}`;
+        yield { id: `${input}/${file.path}@${revision}`, title: `${input} / ${file.path}`, text: `${input} / ${file.path}`, url: `${recordUrl}/blob/${revision}/${filePath}`, version: revision, attribution: input, rights: declaration(declared, `${recordUrl}/blob/${revision}/README.md`, 'repository', { notes: 'Dataset card declaration; individual files or upstream data may have different terms.' }), contentRequests: [{ url: download, headers, downloadRedirects: true, filename: file.path.split('/').at(-1), role: 'dataset repository file' }], metadata: { repository: input, revision, path: file.path, declaredLicenses: rawLicense, original: file, downloadMode: 'files' } };
+      }
+      next = responseHeaders.get('link')?.split(',').find(part => /rel="next"/.test(part))?.match(/<([^>]+)>/)?.[1];
+      if (next) next = new URL(next, endpoint).href;
+    }
+    return;
+  }
   const splits = await http.get(url('https://datasets-server.huggingface.co/splits', { dataset: input }), { headers });
   const chosen = splits.splits?.find(s => (!settings.config || s.config === settings.config) && (!settings.split || s.split === settings.split));
   if (!chosen) throw new Error('Dataset configuration/split is unavailable in the Dataset Viewer');
-  const rawLicense = card.cardData?.license;
-  const declared = Array.isArray(rawLicense) ? (rawLicense.length === 1 ? rawLicense[0] : null) : rawLicense;
   for (let offset = 0;; offset += 100) {
     const page = await http.get(url('https://datasets-server.huggingface.co/rows', { dataset: input, config: chosen.config, split: chosen.split, offset, length: 100 }), { headers });
     for (const item of page.rows || []) {
       const fields = settings.textField ? [settings.textField] : Object.keys(item.row || {}).filter(k => typeof item.row[k] === 'string');
       const strings = fields.map(k => typeof item.row[k] === 'string' ? item.row[k] : '').filter(Boolean);
-      const recordUrl = `https://huggingface.co/datasets/${input}`;
       yield { id: `${input}/${chosen.config}/${chosen.split}/${item.row_idx}`, title: `${input} · row ${item.row_idx}`, text: strings.join('\n'), url: recordUrl, version: card.sha, attribution: input, rights: declaration(declared, `${recordUrl}/blob/${card.sha || 'main'}/README.md`, 'repository'), metadata: { config: chosen.config, split: chosen.split, row: item.row_idx, fields, declaredLicenses: rawLicense, original: item.row } };
     }
     if (!page.rows?.length || offset + page.rows.length >= page.num_rows_total) break;

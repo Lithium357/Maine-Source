@@ -51,7 +51,7 @@ This complete list is repeated in every release, including sources introduced in
 | Europe PMC | No API key needed for the implemented public connector. | [Source / API documentation](https://europepmc.org/RestfulWebService) |
 | Crossref | No API key needed for the implemented public connector. | [Source / API documentation](https://api.crossref.org/swagger-ui/index.html) |
 | Zenodo | No API key needed for the implemented public connector. | [Source / API documentation](https://developers.zenodo.org/) |
-| Hugging Face | Optional read-only token; gated datasets also need the provider’s access approval. | [Get a key / token](https://huggingface.co/settings/tokens) · [Source / API documentation](https://huggingface.co/docs/dataset-viewer/en/rows) |
+| Hugging Face | Optional read-only token; gated datasets also need the provider’s access approval. | [Get a key / token](https://huggingface.co/settings/tokens) · [Source / API documentation](https://huggingface.co/docs/hub/api) |
 | Wikipedia | No API key needed for the implemented public connector. | [Source / API documentation](https://www.mediawiki.org/wiki/API:Main_page) |
 | Wikidata | No API key needed for the implemented public connector. | [Source / API documentation](https://www.wikidata.org/wiki/Wikidata:Data_access) |
 | GovInfo | An api.data.gov key is required for normal use; the public demo key is limited. | [Get a key / token](https://www.govinfo.gov/api-signup) · [Source / API documentation](https://www.govinfo.gov/developers) |

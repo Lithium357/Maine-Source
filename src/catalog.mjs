@@ -9,7 +9,7 @@ const legacySources = [
   { id: 'europepmc', name: 'Europe PMC', category: 'Science & engineering', mark: 'EP', color: '#3e8c80', description: 'Open-access scientific article full text, with article-specific license evidence.', input: 'Literature search', docs: 'https://europepmc.org/RestfulWebService' },
   { id: 'crossref', name: 'Crossref', category: 'Science & engineering', mark: 'CR', color: '#8f6cb0', description: 'Scholarly titles and abstracts. Full-paper licenses are not assigned to abstracts.', input: 'Research topic', docs: 'https://api.crossref.org/swagger-ui/index.html' },
   { id: 'zenodo', name: 'Zenodo', category: 'Datasets', mark: 'ZE', color: '#3887a3', description: 'CC0 research record metadata and descriptions; attached files are not collected.', input: 'Search research records', docs: 'https://developers.zenodo.org/' },
-  { id: 'huggingface', name: 'Hugging Face', category: 'Datasets', mark: 'HF', color: '#b98a26', description: 'Text rows from a chosen dataset, configuration, and split.', credentialUrl: 'https://huggingface.co/settings/tokens', credentialHelp: 'Optional read-only token; gated datasets also need the provider’s access approval.', key: 'Optional read-only token', input: 'Dataset ID, e.g. owner/dataset', docs: 'https://huggingface.co/docs/dataset-viewer/en/rows' },
+  { id: 'huggingface', name: 'Hugging Face', category: 'Datasets', mark: 'HF', color: '#b98a26', description: 'Revision-pinned dataset repository files or Viewer rows.', credentialUrl: 'https://huggingface.co/settings/tokens', credentialHelp: 'Optional read-only token; gated datasets also need the provider’s access approval.', key: 'Optional read-only token', input: 'Dataset ID, e.g. owner/dataset', docs: 'https://huggingface.co/docs/hub/api' },
   { id: 'wikipedia', name: 'Wikipedia', category: 'Reference & language', mark: 'WP', color: '#687980', description: 'Searchable encyclopedia articles with revision and wiki license metadata.', input: 'Search topic', docs: 'https://www.mediawiki.org/wiki/API:Main_page' },
   { id: 'wikidata', name: 'Wikidata', category: 'Reference & language', mark: 'WD', color: '#629579', description: 'CC0 structured entity labels and descriptions, collected as text records.', input: 'Entity search', docs: 'https://www.wikidata.org/wiki/Wikidata:Data_access' },
   { id: 'govinfo', name: 'GovInfo', category: 'Government & law', mark: 'GI', color: '#7776a9', description: 'Bills, regulations, and government publications in text format.', credentialUrl: 'https://www.govinfo.gov/api-signup', credentialHelp: 'An api.data.gov key is required for normal use; the public demo key is limited.', key: 'Required api.data.gov key', input: 'Collection code, e.g. BILLS, FR, CFR', docs: 'https://www.govinfo.gov/developers' },
@@ -21,19 +21,20 @@ const legacySources = [
   { id: 'rss', name: 'RSS / Atom feeds', category: 'Web & news', mark: 'RS', color: '#c78f4c', description: 'Planned: user-selected feeds with publisher-specific terms.', planned: true },
 ];
 const legacyFields = {
-  github: [{ id: 'extensions', label: 'File extensions, comma separated', default: '.py,.js,.ts,.tsx,.rs,.go,.c,.cpp,.h,.java,.md,.txt' }],
-  stackexchange: [{ id: 'site', label: 'Community', options: ['stackoverflow', 'security', 'softwareengineering', 'electronics', 'engineering', 'math', 'physics', 'stats'] }],
+  github: [{ id: 'downloadMode', label: 'Download mode (archive ignores file filters)', options: ['files', 'archive'] }, { id: 'ref', label: 'Branch, tag, or commit', placeholder: 'Repository default branch' }, { id: 'extensions', label: 'File extensions, comma separated (files mode)', default: '.py,.js,.ts,.tsx,.rs,.go,.c,.cpp,.h,.java,.md,.txt' }],
+  stackexchange: [{ id: 'site', label: 'Community', options: ['stackoverflow', 'security', 'softwareengineering', 'electronics', 'engineering', 'math', 'physics', 'stats'] }, { id: 'sort', label: 'Sort questions by', options: ['creation', 'activity', 'votes', 'relevance'] }, { id: 'order', label: 'Question order', options: ['asc', 'desc'] }, { id: 'query', label: 'Search text (optional)' }, { id: 'excludedTags', label: 'Excluded tags, semicolon separated' }, { id: 'fromdate', label: 'Created from, YYYY-MM-DD (optional)' }, { id: 'todate', label: 'Created through, YYYY-MM-DD (default: run start)' }],
   wikipedia: [{ id: 'language', label: 'Language code', default: 'en' }],
-  huggingface: [{ id: 'config', label: 'Configuration', placeholder: 'Auto-detect' }, { id: 'split', label: 'Split', placeholder: 'Auto-detect' }, { id: 'textField', label: 'Text column', placeholder: 'Auto-detect' }],
+  huggingface: [{ id: 'downloadMode', label: 'Download mode', options: ['files', 'rows'] }, { id: 'revision', label: 'Branch, tag, or commit (files mode)', placeholder: 'Default branch' }, { id: 'extensions', label: 'File extensions, comma separated (blank: all files)' }, { id: 'config', label: 'Configuration (rows mode)', placeholder: 'Auto-detect' }, { id: 'split', label: 'Split (rows mode)', placeholder: 'Auto-detect' }, { id: 'textField', label: 'Text column (rows mode)', placeholder: 'Auto-detect' }],
 };
 const legacyCoverage = {
+  github: 'Commit-pinned code files through Contents API, or complete repository tarball snapshots.',
   stackexchange: 'Full questions and answers, original HTML, authors, and per-post license metadata.',
   nasa: 'APOD explanations and direct image/video files when supplied; embedded media availability is reported.',
   crossref: 'Discover and download publisher full-text PDF/XML links, preserving article metadata and download failures.',
   zenodo: 'Download deposited research files, extract supported content, and preserve original files and provenance.',
   wikidata: 'Complete entity JSON including statements and references, plus source metadata.',
   wikipedia: 'Complete article text and revision-pinned wiki source when supplied by the API.',
-  huggingface: 'Dataset Viewer rows with selected text fields and the complete returned row preserved.',
+  huggingface: 'Revision-pinned repository files and dataset shards, or selected Dataset Viewer rows.',
   govinfo: 'Government publication HTML and available PDFs, with full-text extraction and original files.',
 };
 export const sources = [...legacySources.filter(source => !sourceDefinitions.some(definition => definition.id === source.id)).map(source => ({ ...source, ...(legacyCoverage[source.id] ? { description: legacyCoverage[source.id] } : {}), ...(legacyFields[source.id] ? { fields: legacyFields[source.id] } : {}), ...(source.id === 'github' ? { multiline: true } : {}) })), ...sourceDefinitions];
